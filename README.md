@@ -38,6 +38,17 @@ Opening `public/index.html` from Finder works too: if the server is already runn
 
 Click any row or card to open the detail drawer: stage, dates, salary, source, contact, job description, documents, personal notes, and the full stage timeline.
 
+## Profiles
+
+The app keeps separate profiles — for example one for your own search and one for freelance work. Each profile has its own jobs, trash, documents and goals; nothing is shared between them.
+
+- The **profile button** in the header (your initials and the profile name) opens the profile screen. It lists every profile with its contact line and how many jobs it holds, and the active one is tagged **Current**.
+- **Click a profile** to switch to it. The dashboard reloads with that profile's jobs and goals, and the choice is remembered in the browser.
+- **Add profile** takes a name and creates it with no jobs and the default goals. Select it to start using it.
+- **Delete** (the bin icon, hidden when only one profile is left) asks first, then removes that profile with all of its jobs, attached files and goals. If you delete the profile you were using, the app continues on the remaining one.
+
+Contact details are edited in **Settings** and apply to the profile you are on.
+
 ## Deleting and the trash
 
 Every job can be deleted from its table row, board card or detail drawer. Each delete asks for confirmation first. Deleting does **not** remove anything permanently — the job moves to the **Trash** tab with its timeline and files intact.
@@ -79,9 +90,10 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 ## Using the dashboard
 
 - **Search / filters** — search company, role, location, source, description and notes; filter by stage, location type and source. The same filters apply to whichever tab you are on (stage only matters for Applied).
+- **Settings** — the gear in the header opens one dialog with two parts: **Profile** (name, headline, email, phone, location, links) and **Goals** (daily and weekly). Both are saved to the profile you are currently on; **Save changes** stores them together.
 - **Sorting** — click table headers.
 - **Follow-ups** — any Applied job with a next-step date in the next 7 days appears on the Overview. Every due label — "Due tomorrow", "Due in 3d", "Overdue by 2d" — is shown in red, with overdue ones in a heavier weight and a stronger tint. The same red labels appear under the next step in the Applied table and in the detail drawer.
-- **Goals and streak** — the Overview has an **Application goals** panel with a ring for each target: daily and weekly (default 3 a day, 10 a week). Each ring shows applications sent against the target and turns green once it is met, and crossing a target while you use the app sets off a short confetti burst with a "Daily/Weekly goal complete" toast (confetti is skipped if your system asks for reduced motion; the toast still appears). Set the numbers in **Settings** — the gear in the header, or **Set goals** in the panel — and they are stored in the database. A day counts once you have at least one application with that applied date; the week runs Monday to Sunday.
+- **Goals and streak** — the Overview has an **Application goals** panel with a ring for each target: daily and weekly (default 3 a day, 10 a week). Each ring shows applications sent against the target and turns green once it is met, and crossing a target while you use the app sets off a short confetti burst with a "Daily/Weekly goal complete" toast (confetti is skipped if your system asks for reduced motion; the toast still appears). Set the numbers in **Settings** — the gear in the header, or **Set goals** in the panel — and they are stored for the current profile in the database. A day counts once you have at least one application with that applied date; the week runs Monday to Sunday.
 - **Streak** — the next panel counts consecutive days with at least one application. It keeps counting from yesterday until you send something today, so a streak is only broken once a full day passes with nothing sent. The last seven days are shown as dots and the longest run ever is listed as your best. The flame is drawn in flame orange with a warm halo and flickers gently all the time, burning brighter and a little faster once a streak is alive; both animations stop when your system asks for reduced motion.
 - **Rejecting a job** — moving any application to the Rejected stage (from the table, the board, the detail drawer or the edit form) immediately asks whether to delete it. **Delete job and files** removes the application, its notes, timeline and every attached resume, cover letter and other document from the database and disk; **Cancel** keeps it in the Applied tab as rejected. Marking a posting "No longer open" from the review panel does not ask, since that is already a confirmation step.
 - **Needs review** — once an application reaches 30 days in an active stage (Applied, Screening, Interview), it is automatically flagged: a **Review** badge appears in the table and on its board card, and it is listed in the **Needs review** panel on the Overview. Open it and choose **Still open** to record the check, or **No longer open** to close it as rejected. A reviewed job becomes due again after another 30 days, so long-running processes get checked monthly. Rejected, withdrawn and offered jobs, and jobs in To apply, are never flagged.
@@ -122,7 +134,7 @@ python3 -m pip install pytest
 python3 -m pytest -q
 ```
 
-It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings and JSON import. GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
+It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, and profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, and deleting a profile with everything it owns. GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
 ### Pre-commit hook
 
@@ -175,10 +187,17 @@ GET    /api/applications/<id>/documents/<doc>?inline=1  preview a PDF, image or 
 DELETE /api/applications/<id>/documents/<doc> remove a document
 GET    /api/settings                           daily and weekly application goals
 PATCH  /api/settings                           update goals, e.g. { "daily_goal": 5, "weekly_goal": 20 }
+GET    /api/profiles                           every profile with its job counts
+POST   /api/profiles                           create a profile, { "name": "Freelance", … }
+GET    /api/profiles/<id>                      one profile
+PATCH  /api/profiles/<id>                      update name, headline, email, phone, location, links
+DELETE /api/profiles/<id>                      remove the profile with its jobs, files and goals
 POST   /api/import                            { "applications": [ … ] }
 POST   /api/extract                           { "url": "https://…" }
 GET    /api/health
 ```
+
+Every endpoint except `/api/profiles*` and `/api/health` works on one profile. Send `X-Profile-Id: <id>` to pick it; without the header the first profile is used, which is what the dashboard does before it has loaded the profile list.
 
 Example:
 

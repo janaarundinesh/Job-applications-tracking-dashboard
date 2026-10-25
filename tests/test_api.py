@@ -283,3 +283,132 @@ def test_import_json(api):
 def test_extract_requires_url(api):
     assert api.post("/api/extract", {}).status == 400
     assert api.post("/api/extract", {"url": "   "}).status == 400
+
+
+def as_profile(profile_id):
+    """A request header that scopes the call to one profile."""
+    return {"X-Profile-Id": str(profile_id)}
+
+
+def test_profiles_default_and_crud(api):
+    listed = api.get("/api/profiles")
+    assert listed.status == 200
+    assert [profile["name"] for profile in listed.data] == ["Personal"]
+    assert listed.data[0]["jobs"] == 0
+
+    created = api.post("/api/profiles", {"name": "Freelance", "email": "me@example.com"})
+    assert created.status == 201
+    assert created.data["name"] == "Freelance"
+    assert created.data["email"] == "me@example.com"
+    assert created.data["headline"] == ""
+    second = created.data
+
+    assert api.post("/api/profiles", {"name": "   "}).status == 400
+    assert api.post("/api/profiles", {}).status == 400
+
+    updated = api.patch("/api/profiles/%d" % second["id"], {"headline": "Designer"})
+    assert updated.status == 200
+    assert updated.data["headline"] == "Designer"
+    assert updated.data["name"] == "Freelance"
+    assert api.patch("/api/profiles/9999", {"name": "Nope"}).status == 404
+    assert api.get("/api/profiles/9999").status == 404
+
+    assert [profile["name"] for profile in api.get("/api/profiles").data] == [
+        "Personal",
+        "Freelance",
+    ]
+
+
+def test_profile_data_is_isolated(api):
+    first = api.get("/api/profiles").data[0]
+    other = api.post("/api/profiles", {"name": "Other"}).data
+    mine = as_profile(first["id"])
+    theirs = as_profile(other["id"])
+
+    job = api.create(company="Mine")
+    assert api.get("/api/applications", headers=theirs).data == []
+    assert api.get("/api/applications/%d" % job["id"], headers=theirs).status == 404
+    assert api.delete("/api/applications/%d" % job["id"], headers=theirs).status == 404
+
+    their_job = api.post(
+        "/api/applications", {"company": "Theirs", "role": "Dev"}, headers=theirs
+    )
+    assert their_job.status == 201
+    assert [app["company"] for app in api.get("/api/applications", headers=mine).data] == [
+        "Mine"
+    ]
+    assert [app["company"] for app in api.get("/api/applications", headers=theirs).data] == [
+        "Theirs"
+    ]
+
+    # Goals are per profile.
+    assert api.get("/api/settings", headers=mine).data["daily_goal"] == 3
+    api.patch("/api/settings", {"daily_goal": 7}, headers=theirs)
+    assert api.get("/api/settings", headers=theirs).data["daily_goal"] == 7
+    assert api.get("/api/settings", headers=mine).data["daily_goal"] == 3
+
+    # Import lands in the selected profile only.
+    api.post(
+        "/api/import",
+        {"applications": [{"company": "Imported", "role": "Dev"}]},
+        headers=theirs,
+    )
+    assert "Imported" not in [app["company"] for app in api.get("/api/applications", headers=mine).data]
+
+    # Documents can only be attached from the owning profile.
+    assert api.upload(job["id"], b"secret", headers=theirs).status == 404
+    document = api.upload(job["id"], b"secret", headers=mine)
+    assert document.status == 201
+    path = "/api/applications/%d/documents/%d" % (job["id"], document.data["id"])
+    assert api.get(path, headers=mine).status == 200
+    assert api.get(path, headers=theirs).status == 404
+
+    # Trash is per profile too.
+    assert api.delete("/api/applications/%d" % job["id"], headers=mine).status == 200
+    assert len(api.get("/api/applications", headers=mine).data) == 0
+    assert api.get("/api/applications?trash=1", headers=theirs).data == []
+    emptied = api.delete("/api/trash", headers=theirs)
+    assert emptied.data["deleted"] == 0
+    assert len(api.get("/api/applications?trash=1", headers=mine).data) == 1
+    assert api.delete("/api/trash", headers=mine).data["deleted"] == 1
+
+
+def test_deleting_a_profile_removes_its_jobs_files_and_goals(api):
+    other = api.post("/api/profiles", {"name": "Temp"}).data
+    headers = as_profile(other["id"])
+    job = api.post(
+        "/api/applications", {"company": "Temp", "role": "Dev"}, headers=headers
+    ).data
+    assert api.upload(job["id"], b"hello", headers=headers).status == 201
+    folder = api.uploads_dir(job["id"])
+    assert folder.is_dir()
+    api.patch("/api/settings", {"daily_goal": 9}, headers=headers)
+
+    response = api.delete("/api/profiles/%d" % other["id"])
+    assert response.status == 200
+    assert response.data == {"deleted": other["id"], "jobs": 1, "files": 1}
+    assert not folder.exists()
+    assert [profile["name"] for profile in api.get("/api/profiles").data] == ["Personal"]
+    assert api.get("/api/settings").data["daily_goal"] == 3
+
+
+def test_last_profile_cannot_be_deleted(api):
+    only = api.get("/api/profiles").data[0]
+    response = api.delete("/api/profiles/%d" % only["id"])
+    assert response.status == 400
+    assert "at least one profile" in response.data["error"]
+
+
+def test_unknown_or_invalid_profile_header(api):
+    assert api.get("/api/applications", headers=as_profile(999)).status == 404
+    assert api.get("/api/applications", headers=as_profile("abc")).status == 400
+    # The profile list itself is never scoped by the header.
+    assert api.get("/api/profiles", headers=as_profile(999)).status == 200
+
+
+def test_profile_counts_jobs_in_the_list(api):
+    job = api.create(company="Counted")
+    api.delete("/api/applications/%d" % job["id"])
+    listed = api.get("/api/profiles").data
+    assert listed[0]["jobs"] == 0
+    assert listed[0]["total_jobs"] == 1

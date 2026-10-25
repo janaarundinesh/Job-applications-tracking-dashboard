@@ -50,8 +50,21 @@ TEXT_LIMITS = {
 }
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS profiles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    email      TEXT NOT NULL DEFAULT '',
+    phone      TEXT NOT NULL DEFAULT '',
+    location   TEXT NOT NULL DEFAULT '',
+    headline   TEXT NOT NULL DEFAULT '',
+    links      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS applications (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id    INTEGER NOT NULL DEFAULT 1,
     company       TEXT NOT NULL,
     role          TEXT NOT NULL,
     status        TEXT NOT NULL DEFAULT 'applied',
@@ -94,8 +107,10 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    PRIMARY KEY (profile_id, key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_app ON status_events(application_id);
@@ -104,7 +119,16 @@ CREATE INDEX IF NOT EXISTS idx_apps_phase ON applications(phase);
 CREATE INDEX IF NOT EXISTS idx_docs_app ON documents(application_id);
 """
 
+DEFAULT_PROFILE_NAME = "Personal"
 DEFAULT_SETTINGS = {"daily_goal": 3, "weekly_goal": 10}
+PROFILE_LIMITS = {
+    "name": 80,
+    "email": 200,
+    "phone": 40,
+    "location": 120,
+    "headline": 160,
+    "links": 400,
+}
 SETTING_LIMITS = {"daily_goal": (1, 100), "weekly_goal": (1, 100)}
 
 CONTENT_TYPES = {
@@ -150,8 +174,19 @@ def uploads_root(db_path):
     return os.path.join(base, "uploads")
 
 
+def ensure_default_profile(conn):
+    """Every database has at least one profile; older data belongs to it."""
+    row = conn.execute("SELECT id FROM profiles ORDER BY id LIMIT 1").fetchone()
+    if row is None:
+        stamp = now_iso()
+        conn.execute(
+            "INSERT INTO profiles (name, created_at, updated_at) VALUES (?, ?, ?)",
+            (DEFAULT_PROFILE_NAME, stamp, stamp),
+        )
+
+
 def migrate(conn):
-    """Add columns introduced after the first release to existing databases."""
+    """Add columns and tables introduced after the first release."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(applications)")}
     if "phase" not in columns:
         conn.execute(
@@ -165,6 +200,33 @@ def migrate(conn):
         conn.execute("ALTER TABLE applications ADD COLUMN deleted_at TEXT")
     if "reviewed_at" not in columns:
         conn.execute("ALTER TABLE applications ADD COLUMN reviewed_at TEXT")
+    if "profile_id" not in columns:
+        conn.execute(
+            "ALTER TABLE applications ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1"
+        )
+    # Created here rather than in SCHEMA: older databases only gain the column above.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_apps_profile ON applications(profile_id)"
+    )
+
+    ensure_default_profile(conn)
+
+    # Settings became per-profile; rebuild the old key/value table with the
+    # existing goals copied onto the first profile.
+    setting_columns = {row["name"] for row in conn.execute("PRAGMA table_info(settings)")}
+    if setting_columns and "profile_id" not in setting_columns:
+        conn.execute(
+            "CREATE TABLE settings_new ("
+            " profile_id INTEGER NOT NULL DEFAULT 1,"
+            " key TEXT NOT NULL,"
+            " value TEXT NOT NULL,"
+            " PRIMARY KEY (profile_id, key))"
+        )
+        conn.execute(
+            "INSERT INTO settings_new (profile_id, key, value) SELECT 1, key, value FROM settings"
+        )
+        conn.execute("DROP TABLE settings")
+        conn.execute("ALTER TABLE settings_new RENAME TO settings")
 
 
 def init_db(db_path):
@@ -188,6 +250,150 @@ def app_dict(row):
 
 def event_dict(row):
     return {key: row[key] for key in row.keys()}
+
+
+# --------------------------------------------------------------------------
+# Profiles
+# --------------------------------------------------------------------------
+
+def clean_profile(payload, partial=False):
+    if not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    data = {}
+    for key, limit in PROFILE_LIMITS.items():
+        if partial and key not in payload:
+            continue
+        data[key] = _str(payload, key, limit)
+    if (not partial or "name" in data) and not data.get("name"):
+        raise ApiError(400, "A profile name is required")
+    return data
+
+
+def list_profiles(db_path):
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT p.*,"
+            " (SELECT COUNT(*) FROM applications a"
+            "   WHERE a.profile_id = p.id AND a.deleted_at IS NULL) AS jobs,"
+            " (SELECT COUNT(*) FROM applications a WHERE a.profile_id = p.id) AS total_jobs"
+            " FROM profiles p ORDER BY p.id ASC"
+        ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+    finally:
+        conn.close()
+
+
+def default_profile_id(db_path):
+    conn = connect(db_path)
+    try:
+        row = conn.execute("SELECT id FROM profiles ORDER BY id LIMIT 1").fetchone()
+        return row["id"] if row else 1
+    finally:
+        conn.close()
+
+
+def get_profile(db_path, profile_id):
+    conn = connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        if row is None:
+            raise ApiError(404, "Profile not found")
+        return app_dict(row)
+    finally:
+        conn.close()
+
+
+def create_profile(db_path, payload):
+    data = clean_profile(payload)
+    stamp = now_iso()
+    conn = connect(db_path)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO profiles"
+            " (name, email, phone, location, headline, links, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                data["name"],
+                data["email"],
+                data["phone"],
+                data["location"],
+                data["headline"],
+                data["links"],
+                stamp,
+                stamp,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM profiles WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+        return app_dict(row)
+    finally:
+        conn.close()
+
+
+def update_profile(db_path, profile_id, payload):
+    data = clean_profile(payload, partial=True)
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM profiles WHERE id = ?", (profile_id,)
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "Profile not found")
+        if not data:
+            return app_dict(row)
+        assignments = ", ".join("%s = ?" % key for key in data.keys())
+        conn.execute(
+            "UPDATE profiles SET %s, updated_at = ? WHERE id = ?" % assignments,
+            list(data.values()) + [now_iso(), profile_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM profiles WHERE id = ?", (profile_id,)
+        ).fetchone()
+        return app_dict(row)
+    finally:
+        conn.close()
+
+
+def delete_profile(db_path, profile_id):
+    """Remove a profile with every job, document and goal that belongs to it."""
+    conn = connect(db_path)
+    ids = []
+    files = 0
+    try:
+        total = conn.execute("SELECT COUNT(*) AS count FROM profiles").fetchone()["count"]
+        if total <= 1:
+            raise ApiError(400, "Keep at least one profile")
+        row = conn.execute(
+            "SELECT * FROM profiles WHERE id = ?", (profile_id,)
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "Profile not found")
+        ids = [
+            item["id"]
+            for item in conn.execute(
+                "SELECT id FROM applications WHERE profile_id = ?", (profile_id,)
+            ).fetchall()
+        ]
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            files = conn.execute(
+                "SELECT COUNT(*) AS count FROM documents WHERE application_id IN (%s)"
+                % placeholders,
+                ids,
+            ).fetchone()["count"]
+        conn.execute("DELETE FROM applications WHERE profile_id = ?", (profile_id,))
+        conn.execute("DELETE FROM settings WHERE profile_id = ?", (profile_id,))
+        conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    for app_id in ids:
+        shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
+    return {"deleted": profile_id, "jobs": len(ids), "files": files}
 
 
 # --------------------------------------------------------------------------
@@ -314,10 +520,12 @@ def clean_patch(payload):
 # Data access
 # --------------------------------------------------------------------------
 
-def get_settings(db_path):
+def get_settings(db_path, profile_id):
     conn = connect(db_path)
     try:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        rows = conn.execute(
+            "SELECT key, value FROM settings WHERE profile_id = ?", (profile_id,)
+        ).fetchall()
     finally:
         conn.close()
     stored = {row["key"]: row["value"] for row in rows}
@@ -332,7 +540,7 @@ def get_settings(db_path):
     return settings
 
 
-def save_settings(db_path, payload):
+def save_settings(db_path, profile_id, payload):
     if not isinstance(payload, dict):
         raise ApiError(400, "Expected a JSON object")
     updates = {}
@@ -354,38 +562,45 @@ def save_settings(db_path, payload):
     conn = connect(db_path)
     try:
         conn.executemany(
-            "INSERT INTO settings (key, value) VALUES (?, ?)"
-            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            [(key, str(value)) for key, value in updates.items()],
+            "INSERT INTO settings (profile_id, key, value) VALUES (?, ?, ?)"
+            " ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value",
+            [(profile_id, key, str(value)) for key, value in updates.items()],
         )
         conn.commit()
     finally:
         conn.close()
-    return get_settings(db_path)
+    return get_settings(db_path, profile_id)
 
 
-def list_applications(db_path, trashed=False):
+def list_applications(db_path, profile_id, trashed=False):
     conn = connect(db_path)
     try:
         if trashed:
             rows = conn.execute(
-                "SELECT * FROM applications WHERE deleted_at IS NOT NULL"
-                " ORDER BY deleted_at DESC, id DESC"
+                "SELECT * FROM applications"
+                " WHERE profile_id = ? AND deleted_at IS NOT NULL"
+                " ORDER BY deleted_at DESC, id DESC",
+                (profile_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM applications WHERE deleted_at IS NULL"
-                " ORDER BY applied_on DESC, id DESC"
+                "SELECT * FROM applications"
+                " WHERE profile_id = ? AND deleted_at IS NULL"
+                " ORDER BY applied_on DESC, id DESC",
+                (profile_id,),
             ).fetchall()
         return [app_dict(row) for row in rows]
     finally:
         conn.close()
 
 
-def get_application(db_path, app_id):
+def get_application(db_path, profile_id, app_id):
     conn = connect(db_path)
     try:
-        row = conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
+        ).fetchone()
         if row is None:
             raise ApiError(404, "Application not found")
         events = conn.execute(
@@ -401,12 +616,12 @@ def get_application(db_path, app_id):
         conn.close()
 
 
-def create_application(db_path, data):
+def create_application(db_path, profile_id, data):
     stamp = now_iso()
     conn = connect(db_path)
     try:
-        columns = list(data.keys()) + ["created_at", "updated_at"]
-        values = list(data.values()) + [stamp, stamp]
+        columns = list(data.keys()) + ["profile_id", "created_at", "updated_at"]
+        values = list(data.values()) + [profile_id, stamp, stamp]
         placeholders = ", ".join("?" for _ in columns)
         cursor = conn.execute(
             "INSERT INTO applications (%s) VALUES (%s)"
@@ -426,12 +641,13 @@ def create_application(db_path, data):
         conn.close()
 
 
-def update_application(db_path, app_id, data):
+def update_application(db_path, profile_id, app_id, data):
     stamp = now_iso()
     conn = connect(db_path)
     try:
         current = conn.execute(
-            "SELECT * FROM applications WHERE id = ?", (app_id,)
+            "SELECT * FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
         ).fetchone()
         if current is None:
             raise ApiError(404, "Application not found")
@@ -464,13 +680,14 @@ def update_application(db_path, app_id, data):
         conn.close()
 
 
-def soft_delete_application(db_path, app_id):
+def soft_delete_application(db_path, profile_id, app_id):
     """Move a job to the trash. Its documents stay on disk until it is purged."""
     stamp = now_iso()
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM applications WHERE id = ?", (app_id,)
+            "SELECT * FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
         ).fetchone()
         if row is None:
             raise ApiError(404, "Application not found")
@@ -488,12 +705,13 @@ def soft_delete_application(db_path, app_id):
         conn.close()
 
 
-def restore_application(db_path, app_id):
+def restore_application(db_path, profile_id, app_id):
     stamp = now_iso()
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM applications WHERE id = ?", (app_id,)
+            "SELECT * FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
         ).fetchone()
         if row is None:
             raise ApiError(404, "Application not found")
@@ -512,14 +730,15 @@ def restore_application(db_path, app_id):
         conn.close()
 
 
-def purge_trash(db_path):
+def purge_trash(db_path, profile_id):
     """Permanently remove every trashed job, its rows and its uploaded files."""
     conn = connect(db_path)
     try:
         ids = [
             row["id"]
             for row in conn.execute(
-                "SELECT id FROM applications WHERE deleted_at IS NOT NULL"
+                "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND profile_id = ?",
+                (profile_id,),
             ).fetchall()
         ]
         if not ids:
@@ -529,7 +748,10 @@ def purge_trash(db_path):
             "SELECT COUNT(*) AS count FROM documents WHERE application_id IN (%s)" % placeholders,
             ids,
         ).fetchone()["count"]
-        conn.execute("DELETE FROM applications WHERE deleted_at IS NOT NULL")
+        conn.execute(
+            "DELETE FROM applications WHERE deleted_at IS NOT NULL AND profile_id = ?",
+            (profile_id,),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -538,12 +760,13 @@ def purge_trash(db_path):
     return {"deleted": len(ids), "files": files}
 
 
-def purge_application(db_path, app_id):
+def purge_application(db_path, profile_id, app_id):
     """Permanently remove a trashed job, its rows and its uploaded files."""
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM applications WHERE id = ?", (app_id,)
+            "SELECT * FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
         ).fetchone()
         if row is None:
             raise ApiError(404, "Application not found")
@@ -624,7 +847,7 @@ def _document_filename(payload):
     return name
 
 
-def save_document(db_path, app_id, payload):
+def save_document(db_path, profile_id, app_id, payload):
     if not isinstance(payload, dict):
         raise ApiError(400, "Expected a JSON object")
     kind = payload.get("kind") or "other"
@@ -649,7 +872,8 @@ def save_document(db_path, app_id, payload):
     conn = connect(db_path)
     try:
         exists = conn.execute(
-            "SELECT id FROM applications WHERE id = ?", (app_id,)
+            "SELECT id FROM applications WHERE id = ? AND profile_id = ?",
+            (app_id, profile_id),
         ).fetchone()
         if exists is None:
             raise ApiError(404, "Application not found")
@@ -676,12 +900,14 @@ def save_document(db_path, app_id, payload):
         conn.close()
 
 
-def find_document(db_path, app_id, doc_id):
+def find_document(db_path, profile_id, app_id, doc_id):
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM documents WHERE id = ? AND application_id = ?",
-            (doc_id, app_id),
+            "SELECT d.* FROM documents d JOIN applications a"
+            " ON a.id = d.application_id"
+            " WHERE d.id = ? AND d.application_id = ? AND a.profile_id = ?",
+            (doc_id, app_id, profile_id),
         ).fetchone()
         if row is None:
             raise ApiError(404, "Document not found")
@@ -693,12 +919,14 @@ def find_document(db_path, app_id, doc_id):
         conn.close()
 
 
-def delete_document(db_path, app_id, doc_id):
+def delete_document(db_path, profile_id, app_id, doc_id):
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT stored_name FROM documents WHERE id = ? AND application_id = ?",
-            (doc_id, app_id),
+            "SELECT d.stored_name FROM documents d JOIN applications a"
+            " ON a.id = d.application_id"
+            " WHERE d.id = ? AND d.application_id = ? AND a.profile_id = ?",
+            (doc_id, app_id, profile_id),
         ).fetchone()
         if row is None:
             raise ApiError(404, "Document not found")
@@ -713,7 +941,7 @@ def delete_document(db_path, app_id, doc_id):
         pass
 
 
-def import_applications(db_path, items):
+def import_applications(db_path, profile_id, items):
     if not isinstance(items, list):
         raise ApiError(400, "Import expects a JSON array of applications")
     stamp = now_iso()
@@ -727,8 +955,8 @@ def import_applications(db_path, items):
             except ApiError:
                 skipped += 1
                 continue
-            columns = list(data.keys()) + ["created_at", "updated_at"]
-            values = list(data.values()) + [stamp, stamp]
+            columns = list(data.keys()) + ["profile_id", "created_at", "updated_at"]
+            values = list(data.values()) + [profile_id, stamp, stamp]
             cursor = conn.execute(
                 "INSERT INTO applications (%s) VALUES (%s)"
                 % (", ".join(columns), ", ".join("?" for _ in columns)),
@@ -892,6 +1120,45 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_static(path)
         return self.send_error_json(405, "Method not allowed")
 
+    def profile_id(self):
+        """The profile a request works on: X-Profile-Id, else the first profile."""
+        raw = (self.headers.get("X-Profile-Id") or "").strip()
+        if not raw:
+            return default_profile_id(self.db_path)
+        try:
+            value = int(raw)
+        except ValueError:
+            raise ApiError(400, "Invalid profile id")
+        conn = connect(self.db_path)
+        try:
+            row = conn.execute("SELECT id FROM profiles WHERE id = ?", (value,)).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise ApiError(404, "Profile not found")
+        return value
+
+    def profiles(self, parts):
+        if not parts:
+            if self.command == "GET":
+                return self.send_json(list_profiles(self.db_path))
+            if self.command == "POST":
+                return self.send_json(create_profile(self.db_path, self.read_json()), 201)
+            raise ApiError(405, "Method not allowed")
+        if len(parts) != 1:
+            raise ApiError(404, "Unknown endpoint")
+        try:
+            profile_id = int(parts[0])
+        except ValueError:
+            raise ApiError(404, "Unknown endpoint")
+        if self.command in ("GET", "HEAD"):
+            return self.send_json(get_profile(self.db_path, profile_id))
+        if self.command in ("PATCH", "PUT"):
+            return self.send_json(update_profile(self.db_path, profile_id, self.read_json()))
+        if self.command == "DELETE":
+            return self.send_json(delete_profile(self.db_path, profile_id))
+        raise ApiError(405, "Method not allowed")
+
     def api(self, parts):
         try:
             if not parts:
@@ -899,6 +1166,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if parts[0] == "health" and self.command == "GET":
                 return self.send_json({"ok": True})
+
+            if parts[0] == "profiles":
+                return self.profiles(parts[1:])
+
+            profile_id = self.profile_id()
 
             if parts[0] == "extract":
                 if self.command != "POST":
@@ -917,15 +1189,17 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(404, "Unknown endpoint")
                 if self.command != "DELETE":
                     raise ApiError(405, "Method not allowed")
-                return self.send_json(purge_trash(self.db_path))
+                return self.send_json(purge_trash(self.db_path, profile_id))
 
             if parts[0] == "settings":
                 if len(parts) != 1:
                     raise ApiError(404, "Unknown endpoint")
                 if self.command == "GET":
-                    return self.send_json(get_settings(self.db_path))
+                    return self.send_json(get_settings(self.db_path, profile_id))
                 if self.command in ("PATCH", "PUT"):
-                    return self.send_json(save_settings(self.db_path, self.read_json()))
+                    return self.send_json(
+                        save_settings(self.db_path, profile_id, self.read_json())
+                    )
                 raise ApiError(405, "Method not allowed")
 
             if parts[0] != "applications" and parts[0] != "import":
@@ -936,7 +1210,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(405, "Method not allowed")
                 payload = self.read_json()
                 items = payload.get("applications") if isinstance(payload, dict) else payload
-                imported, skipped = import_applications(self.db_path, items)
+                imported, skipped = import_applications(self.db_path, profile_id, items)
                 return self.send_json({"imported": imported, "skipped": skipped})
 
             if parts[0] == "applications" and len(parts) == 3 and parts[2] == "restore":
@@ -946,7 +1220,7 @@ class Handler(BaseHTTPRequestHandler):
                     app_id = int(parts[1])
                 except ValueError:
                     raise ApiError(404, "Unknown endpoint")
-                return self.send_json(restore_application(self.db_path, app_id))
+                return self.send_json(restore_application(self.db_path, profile_id, app_id))
 
             if parts[0] == "applications" and len(parts) >= 3 and parts[2] == "documents":
                 try:
@@ -956,7 +1230,9 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 3:
                     if self.command != "POST":
                         raise ApiError(405, "Method not allowed")
-                    document = save_document(self.db_path, app_id, self.read_json())
+                    document = save_document(
+                        self.db_path, profile_id, app_id, self.read_json()
+                    )
                     return self.send_json(document, 201)
                 if len(parts) == 4:
                     try:
@@ -964,7 +1240,7 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         raise ApiError(404, "Unknown endpoint")
                     if self.command in ("GET", "HEAD"):
-                        row, path = find_document(self.db_path, app_id, doc_id)
+                        row, path = find_document(self.db_path, profile_id, app_id, doc_id)
                         inline = (self.query.get("inline") or ["0"])[0].lower() in (
                             "1", "true", "yes"
                         )
@@ -972,7 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
                             path, row["content_type"], row["filename"], inline=inline
                         )
                     if self.command == "DELETE":
-                        delete_document(self.db_path, app_id, doc_id)
+                        delete_document(self.db_path, profile_id, app_id, doc_id)
                         return self.send_json({"deleted": doc_id})
                     raise ApiError(405, "Method not allowed")
                 raise ApiError(404, "Unknown endpoint")
@@ -980,10 +1256,14 @@ class Handler(BaseHTTPRequestHandler):
             if len(parts) == 1:
                 if self.command == "GET":
                     trashed = (self.query.get("trash") or ["0"])[0].lower() in ("1", "true", "yes")
-                    return self.send_json(list_applications(self.db_path, trashed=trashed))
+                    return self.send_json(
+                        list_applications(self.db_path, profile_id, trashed=trashed)
+                    )
                 if self.command == "POST":
                     data = clean_create(self.read_json())
-                    return self.send_json(create_application(self.db_path, data), 201)
+                    return self.send_json(
+                        create_application(self.db_path, profile_id, data), 201
+                    )
                 raise ApiError(405, "Method not allowed")
 
             if len(parts) == 2:
@@ -993,7 +1273,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(404, "Unknown endpoint")
 
                 if self.command in ("GET", "HEAD"):
-                    application, events, documents = get_application(self.db_path, app_id)
+                    application, events, documents = get_application(
+                        self.db_path, profile_id, app_id
+                    )
                     return self.send_json(
                         {
                             "application": application,
@@ -1003,15 +1285,19 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 if self.command in ("PATCH", "PUT"):
                     data = clean_patch(self.read_json())
-                    return self.send_json(update_application(self.db_path, app_id, data))
+                    return self.send_json(
+                        update_application(self.db_path, profile_id, app_id, data)
+                    )
                 if self.command == "DELETE":
                     permanent = (self.query.get("permanent") or ["0"])[0].lower() in (
                         "1", "true", "yes"
                     )
                     if permanent:
-                        purge_application(self.db_path, app_id)
+                        purge_application(self.db_path, profile_id, app_id)
                         return self.send_json({"permanent": True, "deleted": app_id})
-                    application = soft_delete_application(self.db_path, app_id)
+                    application = soft_delete_application(
+                        self.db_path, profile_id, app_id
+                    )
                     return self.send_json({"trashed": app_id, "application": application})
                 raise ApiError(405, "Method not allowed")
 

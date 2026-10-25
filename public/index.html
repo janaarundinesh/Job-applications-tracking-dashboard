@@ -65,6 +65,12 @@
   </nav>
 
   <div class="topbar-actions">
+    <button class="profile-chip" id="profile-btn" title="Switch profile" aria-haspopup="dialog" aria-label="Switch profile">
+      <span class="avatar" id="profile-avatar" aria-hidden="true">JP</span>
+      <span class="profile-chip-name" id="profile-chip-name">Profile</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+    </button>
+
     <div class="menu-wrap">
       <button class="btn btn-ghost" id="data-menu-btn" aria-haspopup="true" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
@@ -442,34 +448,98 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="profiles-backdrop" hidden>
+  <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="profiles-title">
+    <header class="modal-head">
+      <div>
+        <h2 id="profiles-title">Profiles</h2>
+        <p class="modal-sub" id="profiles-sub">Each profile keeps its own jobs, documents and goals.</p>
+      </div>
+      <button type="button" class="btn btn-icon" id="profiles-close" aria-label="Close profiles">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="modal-body">
+      <ul class="profile-list" id="profile-list"></ul>
+      <form class="profile-create" id="profile-create" novalidate>
+        <input id="profile-create-name" maxlength="80" placeholder="New profile name, e.g. Personal or Freelance" autocomplete="off" aria-label="New profile name" />
+        <button type="submit" class="btn" id="profile-create-btn">Add profile</button>
+      </form>
+      <p class="mode-hint">New profiles start with no jobs and the default goals. Fill in the contact details under Settings.</p>
+      <p class="form-error" id="profiles-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <span class="modal-foot-note">Switching profiles reloads jobs and goals.</span>
+      <button type="button" class="btn btn-ghost" id="profiles-done">Done</button>
+    </footer>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="settings-backdrop" hidden>
-  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="modal-head">
       <div>
         <h2 id="settings-title">Settings</h2>
-        <p class="modal-sub">Set the pace you want to keep.</p>
+        <p class="modal-sub" id="settings-sub">Your details and the pace you want to keep.</p>
       </div>
       <button type="button" class="btn btn-icon" id="settings-close" aria-label="Close settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </header>
     <form id="settings-form" class="modal-body" novalidate>
-      <div class="field-row">
-        <label class="field">
-          <span>Daily goal</span>
-          <input type="number" name="daily_goal" id="settings-daily" min="1" max="100" step="1" required />
-        </label>
-        <label class="field">
-          <span>Weekly goal</span>
-          <input type="number" name="weekly_goal" id="settings-weekly" min="1" max="100" step="1" required />
-        </label>
-      </div>
-      <p class="mode-hint">A day counts once at least one application has been sent that day. Weeks run Monday to Sunday and the Overview shows your progress.</p>
+      <section class="settings-block">
+        <h3 class="settings-heading">Profile</h3>
+        <div class="field-row">
+          <label class="field">
+            <span>Name</span>
+            <input name="name" id="settings-name" maxlength="80" autocomplete="name" required />
+          </label>
+          <label class="field">
+            <span>Headline</span>
+            <input name="headline" id="settings-headline" maxlength="160" placeholder="Product designer" autocomplete="off" />
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>Email</span>
+            <input type="email" name="email" id="settings-email" maxlength="200" autocomplete="email" />
+          </label>
+          <label class="field">
+            <span>Phone</span>
+            <input name="phone" id="settings-phone" maxlength="40" autocomplete="tel" />
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>Location</span>
+            <input name="location" id="settings-location" maxlength="120" placeholder="Berlin, Germany" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Links</span>
+            <input name="links" id="settings-links" maxlength="400" placeholder="LinkedIn, portfolio…" autocomplete="off" />
+          </label>
+        </div>
+        <p class="mode-hint">Saved to this profile only. Switch or add profiles from the profile button in the header.</p>
+      </section>
+      <section class="settings-block">
+        <h3 class="settings-heading">Goals</h3>
+        <div class="field-row">
+          <label class="field">
+            <span>Daily goal</span>
+            <input type="number" name="daily_goal" id="settings-daily" min="1" max="100" step="1" required />
+          </label>
+          <label class="field">
+            <span>Weekly goal</span>
+            <input type="number" name="weekly_goal" id="settings-weekly" min="1" max="100" step="1" required />
+          </label>
+        </div>
+        <p class="mode-hint">A day counts once at least one application has been sent that day. Weeks run Monday to Sunday and the Overview shows your progress.</p>
+      </section>
       <p class="form-error" id="settings-error" hidden></p>
     </form>
     <footer class="modal-foot">
       <button type="button" class="btn btn-ghost" id="settings-cancel">Cancel</button>
-      <button type="submit" form="settings-form" class="btn btn-primary" id="settings-save">Save goals</button>
+      <button type="submit" form="settings-form" class="btn btn-primary" id="settings-save">Save changes</button>
     </footer>
   </div>
 </div>

@@ -57,6 +57,8 @@
     previewDoc: null,
     goalProgress: null,
     settings: Object.assign({}, DEFAULT_GOALS),
+    profiles: [],
+    profileId: null,
     loading: true,
   };
 
@@ -273,6 +275,11 @@
 
   async function api(path, options) {
     const init = Object.assign({ headers: { "Content-Type": "application/json" } }, options);
+    init.headers = Object.assign({}, init.headers);
+    // Profile endpoints manage every profile, so they never carry a selection.
+    if (state.profileId && !path.startsWith("/api/profiles")) {
+      init.headers["X-Profile-Id"] = String(state.profileId);
+    }
     let response;
     try {
       response = await fetch(path, init);
@@ -449,6 +456,7 @@
   /* ---------------- rendering ---------------- */
 
   function render() {
+    renderProfileChrome();
     renderTabs();
     renderViewSwitch();
     renderOverview();
@@ -1583,9 +1591,190 @@
     }
   }
 
+  /* ---------------- profiles ---------------- */
+
+  function activeProfile() {
+    return (
+      state.profiles.find((profile) => profile.id === state.profileId) || state.profiles[0] || null
+    );
+  }
+
+  function initials(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function persistProfile() {
+    if (state.profileId) localStorage.setItem("jobpipe:profile", String(state.profileId));
+    else localStorage.removeItem("jobpipe:profile");
+  }
+
+  function renderProfileChrome() {
+    const button = $("#profile-btn");
+    if (!button) return;
+    const profile = activeProfile();
+    $("#profile-avatar").textContent = initials(profile ? profile.name : "");
+    $("#profile-chip-name").textContent = profile ? profile.name : "Profile";
+    button.title = profile ? "Switch profile — " + profile.name : "Switch profile";
+  }
+
+  async function loadProfiles() {
+    const list = await api("/api/profiles");
+    state.profiles = Array.isArray(list) ? list : [];
+    const stored = Number(localStorage.getItem("jobpipe:profile"));
+    const known = state.profiles.some((profile) => profile.id === stored);
+    state.profileId = known ? stored : state.profiles.length ? state.profiles[0].id : null;
+    persistProfile();
+    renderProfileChrome();
+  }
+
+  function renderProfilesList() {
+    const list = $("#profile-list");
+    if (!state.profiles.length) {
+      list.innerHTML = '<li class="profile-row"><span class="profile-row-meta">No profiles yet.</span></li>';
+      return;
+    }
+    list.innerHTML = state.profiles
+      .map((profile) => {
+        const active = profile.id === state.profileId;
+        const jobs = profile.jobs || 0;
+        const detail = profile.headline || profile.email || "No contact details yet";
+        const meta =
+          detail + " · " + (jobs ? jobs + " job" + (jobs === 1 ? "" : "s") : "no jobs yet");
+        return (
+          '<li class="profile-row' + (active ? " is-active" : "") + '">' +
+          '<span class="avatar" aria-hidden="true">' + esc(initials(profile.name)) + "</span>" +
+          '<button type="button" class="profile-row-main" data-select-profile="' + profile.id + '">' +
+          '<span class="profile-row-name">' + esc(profile.name) +
+          (active ? '<span class="profile-tag">Current</span>' : "") +
+          "</span>" +
+          '<span class="profile-row-meta">' + esc(meta) + "</span>" +
+          "</button>" +
+          '<span class="profile-row-actions">' +
+          (state.profiles.length > 1
+            ? '<button type="button" class="btn btn-icon" data-delete-profile="' + profile.id +
+              '" title="Delete ' + esc(profile.name) + '" aria-label="Delete ' + esc(profile.name) + '">' +
+              ICON.trash + "</button>"
+            : "") +
+          "</span>" +
+          "</li>"
+        );
+      })
+      .join("");
+  }
+
+  function openProfiles() {
+    const error = $("#profiles-error");
+    error.hidden = true;
+    error.textContent = "";
+    $("#profile-create-name").value = "";
+    renderProfilesList();
+    $("#profiles-backdrop").hidden = false;
+    document.body.classList.add("no-scroll");
+    window.setTimeout(() => $("#profile-create-name").focus(), 30);
+  }
+
+  function closeProfiles() {
+    $("#profiles-backdrop").hidden = true;
+    document.body.classList.remove("no-scroll");
+  }
+
+  function selectProfile(id) {
+    if (!id) return;
+    if (id === state.profileId) {
+      closeProfiles();
+      return;
+    }
+    state.profileId = id;
+    persistProfile();
+    state.selection.clear();
+    if (state.drawerId) closeDrawer();
+    closeProfiles();
+    renderProfileChrome();
+    render();
+    loadApps();
+    const profile = activeProfile();
+    if (profile) toast("Switched to " + profile.name);
+  }
+
+  async function createProfile(event) {
+    event.preventDefault();
+    const input = $("#profile-create-name");
+    const name = input.value.trim();
+    const box = $("#profiles-error");
+    if (!name) {
+      box.hidden = false;
+      box.textContent = "Give the new profile a name.";
+      input.focus();
+      return;
+    }
+    const button = $("#profile-create-btn");
+    button.disabled = true;
+    try {
+      const profile = await api("/api/profiles", {
+        method: "POST",
+        body: JSON.stringify({ name: name }),
+      });
+      state.profiles.push(Object.assign({ jobs: 0, total_jobs: 0 }, profile));
+      input.value = "";
+      box.hidden = true;
+      renderProfilesList();
+      toast("Profile added — select it to start using it");
+    } catch (error) {
+      box.hidden = false;
+      box.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function deleteProfile(profile) {
+    if (!profile) return;
+    if (state.profiles.length <= 1) {
+      toast("Keep at least one profile", true);
+      return;
+    }
+    const jobs = profile.total_jobs || 0;
+    confirmAction({
+      title: "Delete " + profile.name + "?",
+      text:
+        "The profile is removed with " + jobs + " job" + (jobs === 1 ? "" : "s") +
+        ", every attached document and its goals. This cannot be undone." +
+        (profile.id === state.profileId ? " You will continue on another profile." : ""),
+      okLabel: "Delete profile",
+      onConfirm: async () => {
+        await api("/api/profiles/" + profile.id, { method: "DELETE" });
+        const wasActive = profile.id === state.profileId;
+        state.profiles = state.profiles.filter((item) => item.id !== profile.id);
+        renderProfilesList();
+        if (wasActive) {
+          state.profileId = state.profiles.length ? state.profiles[0].id : null;
+          persistProfile();
+          renderProfileChrome();
+          state.selection.clear();
+          render();
+          await loadApps();
+        }
+        toast("Profile deleted");
+      },
+    });
+  }
+
   /* ---------------- settings ---------------- */
 
   function openSettings() {
+    const profile = activeProfile();
+    $("#settings-name").value = profile ? profile.name : "";
+    $("#settings-headline").value = profile ? profile.headline || "" : "";
+    $("#settings-email").value = profile ? profile.email || "" : "";
+    $("#settings-phone").value = profile ? profile.phone || "" : "";
+    $("#settings-location").value = profile ? profile.location || "" : "";
+    $("#settings-links").value = profile ? profile.links || "" : "";
+    $("#settings-sub").textContent = profile
+      ? "Details for " + profile.name + " and the pace you want to keep."
+      : "Your details and the pace you want to keep.";
     $("#settings-daily").value = state.settings.daily_goal;
     $("#settings-weekly").value = state.settings.weekly_goal;
     const error = $("#settings-error");
@@ -1593,7 +1782,7 @@
     error.textContent = "";
     $("#settings-backdrop").hidden = false;
     document.body.classList.add("no-scroll");
-    window.setTimeout(() => $("#settings-daily").focus(), 30);
+    window.setTimeout(() => $("#settings-name").focus(), 30);
   }
 
   function closeSettings() {
@@ -1607,6 +1796,26 @@
     const weekly = Number($("#settings-weekly").value);
     const valid = (value) => Number.isInteger(value) && value >= 1 && value <= 100;
     const box = $("#settings-error");
+    const profile = activeProfile();
+    const details = {
+      name: $("#settings-name").value.trim(),
+      headline: $("#settings-headline").value.trim(),
+      email: $("#settings-email").value.trim(),
+      phone: $("#settings-phone").value.trim(),
+      location: $("#settings-location").value.trim(),
+      links: $("#settings-links").value.trim(),
+    };
+    if (!profile) {
+      box.textContent = "No profile is selected. Pick one from the profile button first.";
+      box.hidden = false;
+      return;
+    }
+    if (!details.name) {
+      box.textContent = "Give this profile a name.";
+      box.hidden = false;
+      $("#settings-name").focus();
+      return;
+    }
     if (!valid(daily) || !valid(weekly)) {
       box.textContent = "Enter whole numbers between 1 and 100 for both goals.";
       box.hidden = false;
@@ -1615,6 +1824,12 @@
     const button = $("#settings-save");
     button.disabled = true;
     try {
+      const updated = await api("/api/profiles/" + profile.id, {
+        method: "PATCH",
+        body: JSON.stringify(details),
+      });
+      const index = state.profiles.findIndex((item) => item.id === profile.id);
+      if (index !== -1) state.profiles[index] = Object.assign({}, state.profiles[index], updated);
       const saved = await api("/api/settings", {
         method: "PATCH",
         body: JSON.stringify({ daily_goal: daily, weekly_goal: weekly }),
@@ -1622,7 +1837,7 @@
       state.settings = Object.assign({}, state.settings, saved);
       render();
       closeSettings();
-      toast("Goals updated");
+      toast("Settings updated");
     } catch (err) {
       box.hidden = false;
       box.textContent = err.message;
@@ -1958,7 +2173,14 @@
     let busy = false;
     const cleanup = () => {
       backdrop.remove();
-      document.body.classList.remove("no-scroll");
+      // Another dialog may still be open behind this one.
+      if (
+        $("#profiles-backdrop").hidden &&
+        $("#settings-backdrop").hidden &&
+        $("#modal-backdrop").hidden
+      ) {
+        document.body.classList.remove("no-scroll");
+      }
     };
     fragment.querySelector(".confirm-cancel").addEventListener("click", cleanup);
     backdrop.addEventListener("click", (event) => {
@@ -2494,7 +2716,8 @@
     document.addEventListener("keydown", (event) => {
       const isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
       if (event.key === "Escape") {
-        if (!$("#settings-backdrop").hidden) closeSettings();
+        if (!$("#profiles-backdrop").hidden) closeProfiles();
+        else if (!$("#settings-backdrop").hidden) closeSettings();
         else if (!$("#preview-backdrop").hidden) closePreview();
         else if (!$("#modal-backdrop").hidden) closeModal();
         else if (!$(".confirm-backdrop")) {
@@ -2519,6 +2742,26 @@
     $("#preview-close").addEventListener("click", closePreview);
     $("#preview-backdrop").addEventListener("click", (event) => {
       if (event.target.id === "preview-backdrop") closePreview();
+    });
+
+    $("#profile-btn").addEventListener("click", openProfiles);
+    $("#profiles-close").addEventListener("click", closeProfiles);
+    $("#profiles-done").addEventListener("click", closeProfiles);
+    $("#profile-create").addEventListener("submit", createProfile);
+    $("#profiles-backdrop").addEventListener("click", (event) => {
+      if (event.target.id === "profiles-backdrop") closeProfiles();
+    });
+    $("#profile-list").addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-delete-profile]");
+      if (remove) {
+        const profile = state.profiles.find(
+          (item) => item.id === Number(remove.dataset.deleteProfile)
+        );
+        deleteProfile(profile);
+        return;
+      }
+      const pick = event.target.closest("[data-select-profile]");
+      if (pick) selectProfile(Number(pick.dataset.selectProfile));
     });
 
     $("#settings-btn").addEventListener("click", openSettings);
@@ -2796,7 +3039,16 @@
     bindEvents();
     syncPhaseFields();
     render();
-    loadApps();
+    boot();
+  }
+
+  async function boot() {
+    try {
+      await loadProfiles();
+    } catch (error) {
+      toast(error.message, true);
+    }
+    await loadApps();
   }
 
   document.addEventListener("DOMContentLoaded", init);

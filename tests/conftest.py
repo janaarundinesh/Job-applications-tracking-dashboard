@@ -78,7 +78,15 @@ class ApiClient:
         assert response.status == 201, response.data
         return response.data
 
-    def upload(self, app_id, raw, filename="resume.txt", kind="resume", content_type="text/plain"):
+    def upload(
+        self,
+        app_id,
+        raw,
+        filename="resume.txt",
+        kind="resume",
+        content_type="text/plain",
+        headers=None,
+    ):
         response = self.post(
             "/api/applications/%s/documents" % app_id,
             {
@@ -87,6 +95,7 @@ class ApiClient:
                 "content_type": content_type,
                 "data": base64.b64encode(raw).decode("ascii"),
             },
+            headers=headers,
         )
         return response
 
