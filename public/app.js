@@ -2754,17 +2754,35 @@
   // forward as soon as it answers and otherwise keep this screen as a guide.
   function startFromFile() {
     const status = $("#file-guard-status");
+    const retry = $("#file-guard-retry");
     if (!status) return;
-    fetch("http://127.0.0.1:8787/api/health", { mode: "no-cors", cache: "no-store" })
-      .then(() => {
-        status.textContent = "Server found — opening the dashboard…";
-        status.classList.add("is-found");
-        window.location.replace("http://127.0.0.1:8787");
-      })
-      .catch(() => {
-        status.textContent =
-          "The server did not answer automatically. If it is already running, use the button below; otherwise start it with the command above.";
-      });
+
+    let checking = false;
+
+    function check() {
+      if (checking) return;
+      checking = true;
+      if (retry) retry.disabled = true;
+      status.classList.remove("is-found", "is-error");
+      status.textContent = "Checking whether the server is running…";
+      fetch("http://127.0.0.1:8787/api/health", { mode: "no-cors", cache: "no-store" })
+        .then(() => {
+          status.textContent = "Server found — opening the dashboard…";
+          status.classList.add("is-found");
+          window.location.replace("http://127.0.0.1:8787");
+        })
+        .catch(() => {
+          status.textContent = "The server did not answer. Start it with the command above, then check again.";
+          status.classList.add("is-error");
+        })
+        .finally(() => {
+          checking = false;
+          if (retry) retry.disabled = false;
+        });
+    }
+
+    if (retry) retry.addEventListener("click", check);
+    check();
   }
 
   function init() {

@@ -26,7 +26,7 @@ Options:
 
 Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
 
-Opening `public/index.html` from Finder works too: if the server is already running, the page forwards to it, and if it is not you get a short start screen with the command to run. Either way the server must stay running for saves to land, so keep that Terminal window open. If an action reports that it cannot reach the server, start it again; a single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
+Opening `public/index.html` from Finder works too: if the server is already running, the page forwards to it, and if it is not you get a short start screen with the command to run, a **Check again** button and a link to the dashboard. Either way the server must stay running for saves to land, so keep that Terminal window open. If an action reports that it cannot reach the server, start it again; a single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
 
 ## The three tabs
 
