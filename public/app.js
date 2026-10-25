@@ -54,6 +54,7 @@
     drawerDocuments: [],
     editingId: null,
     previewDoc: null,
+    goalProgress: null,
     settings: Object.assign({}, DEFAULT_GOALS),
     loading: true,
   };
@@ -544,26 +545,81 @@
     renderReviewList();
   }
 
-  function goalRow(key, label, count, target, foot) {
-    const percent = Math.min(100, Math.round((count / target) * 100));
+  function goalRing(key, label, count, target, foot) {
+    const radius = 34;
+    const circumference = 2 * Math.PI * radius;
+    const ratio = Math.min(1, count / target);
+    const offset = circumference * (1 - ratio);
+    const complete = count >= target;
     return (
-      '<div class="goal-row" data-goal-row="' + key + '">' +
-      '<div class="goal-top">' +
-      '<span class="goal-name">' + esc(label) + "</span>" +
-      '<span class="goal-numbers"><strong>' + count + "</strong> of" +
-      '<input class="goal-input" type="number" min="1" max="100" step="1" value="' + target + '"' +
-      ' data-goal="' + key + '" aria-label="' + esc(label) + ' target">' +
-      "</span></div>" +
-      '<div class="goal-track" role="progressbar" aria-valuemin="0" aria-valuemax="' + target + '"' +
-      ' aria-valuenow="' + Math.min(count, target) + '" aria-label="' + esc(label) + ' progress">' +
-      '<span class="goal-fill' + (count >= target ? " is-complete" : "") + '" style="width:' + percent + '%"></span>' +
+      '<div class="goal-block" data-goal="' + key + '">' +
+      '<div class="goal-ring' + (complete ? " is-complete" : "") + '" role="img"' +
+      ' aria-label="' + esc(label + ": " + count + " of " + target) + '">' +
+      '<svg viewBox="0 0 84 84" aria-hidden="true">' +
+      '<circle class="ring-track" cx="42" cy="42" r="' + radius + '"></circle>' +
+      '<circle class="ring-fill" cx="42" cy="42" r="' + radius + '"' +
+      ' style="stroke-dasharray:' + circumference.toFixed(2) + ";stroke-dashoffset:" + offset.toFixed(2) + '"></circle>' +
+      "</svg>" +
+      '<span class="goal-ring-value">' + count + "<small>/" + target + "</small></span>" +
       "</div>" +
+      '<div class="goal-ring-label">' + esc(label) + "</div>" +
       '<div class="goal-foot">' + esc(foot) + "</div>" +
       "</div>"
     );
   }
 
+  /* A short confetti burst around the goal rings. Skipped when the user asks for
+     reduced motion; the toast still appears. */
+  function confettiBurst() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const layer = document.createElement("div");
+    layer.className = "confetti-layer";
+    layer.setAttribute("aria-hidden", "true");
+    const anchor = $("#goal-list").getBoundingClientRect();
+    const originX = anchor.width ? anchor.left + anchor.width / 2 : window.innerWidth / 2;
+    const originY = anchor.height ? anchor.top + anchor.height * 0.4 : window.innerHeight / 3;
+    const colors = ["var(--accent)", "var(--st-offer)", "var(--st-interview)", "#f2b544", "#ef6f9b"];
+    for (let index = 0; index < 18; index += 1) {
+      const piece = document.createElement("span");
+      piece.className = "confetti-piece";
+      piece.style.left = originX + (Math.random() * 150 - 75) + "px";
+      piece.style.top = originY + (Math.random() * 26 - 13) + "px";
+      piece.style.background = colors[index % colors.length];
+      piece.style.setProperty("--dx", Math.round(Math.random() * 180 - 90) + "px");
+      piece.style.setProperty("--rot", Math.round(Math.random() * 540 - 270) + "deg");
+      piece.style.animationDelay = (Math.random() * 0.12).toFixed(2) + "s";
+      layer.appendChild(piece);
+    }
+    document.body.appendChild(layer);
+    window.setTimeout(() => layer.remove(), 1900);
+  }
+
+  /* Fire only when a count crosses a target during use — never on page load or
+     when the target itself is changed. */
+  function celebrateGoal(stats) {
+    if (state.loading) return;
+    const today = todayISO();
+    const weekKey = isoOf(startOfWeek(new Date()));
+    const dailyGoal = Math.max(1, Number(state.settings.daily_goal) || DEFAULT_GOALS.daily_goal);
+    const weeklyGoal = Math.max(1, Number(state.settings.weekly_goal) || DEFAULT_GOALS.weekly_goal);
+    const previous = state.goalProgress;
+    const next = { dayKey: today, weekKey, daily: stats.todayCount, weekly: stats.weekCount };
+    state.goalProgress = next;
+    if (!previous || previous.dayKey !== today || previous.weekKey !== weekKey) return;
+    const dailyHit = previous.daily < dailyGoal && next.daily >= dailyGoal;
+    const weeklyHit = previous.weekly < weeklyGoal && next.weekly >= weeklyGoal;
+    if (!dailyHit && !weeklyHit) return;
+    confettiBurst();
+    if (dailyHit) {
+      toast("Daily goal complete — " + next.daily + " of " + dailyGoal + " today", false, "celebration");
+    }
+    if (weeklyHit) {
+      toast("Weekly goal complete — " + next.weekly + " of " + weeklyGoal + " this week", false, "celebration");
+    }
+  }
+
   function renderGoals(stats) {
+    celebrateGoal(stats);
     const dailyGoal = Math.max(1, Number(state.settings.daily_goal) || DEFAULT_GOALS.daily_goal);
     const weeklyGoal = Math.max(1, Number(state.settings.weekly_goal) || DEFAULT_GOALS.weekly_goal);
     const dailyLeft = Math.max(0, dailyGoal - stats.todayCount);
@@ -575,8 +631,9 @@
     const weeklyFoot = weeklyLeft
       ? weeklyLeft + " more this week · " + daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left"
       : "Weekly goal met — anything else is a bonus";
-    $("#goal-list").innerHTML = goalRow("daily_goal", "Daily", stats.todayCount, dailyGoal, dailyFoot) +
-      goalRow("weekly_goal", "Weekly", stats.weekCount, weeklyGoal, weeklyFoot);
+    $("#goal-list").innerHTML =
+      goalRing("daily_goal", "Daily", stats.todayCount, dailyGoal, dailyFoot) +
+      goalRing("weekly_goal", "Weekly", stats.weekCount, weeklyGoal, weeklyFoot);
   }
 
   function renderStreak(stats) {
@@ -1215,13 +1272,16 @@
       "</section>" +
       '<section class="drawer-section">' +
       "<h3>Documents</h3>" +
+      '<div class="doc-drop" data-doc-drop>' +
       '<div class="doc-uploads">' +
-      '<label class="btn btn-ghost doc-upload">' + ICON.attach + "Resume" +
-      '<input type="file" data-doc-kind="resume" hidden /></label>' +
-      '<label class="btn btn-ghost doc-upload">' + ICON.attach + "Cover letter" +
-      '<input type="file" data-doc-kind="cover_letter" hidden /></label>' +
-      '<label class="btn btn-ghost doc-upload">' + ICON.attach + "Other" +
-      '<input type="file" data-doc-kind="other" hidden /></label>' +
+      '<label class="btn btn-ghost doc-upload" data-drop-kind="resume">' + ICON.attach + "Resume" +
+      '<input type="file" data-doc-kind="resume" hidden multiple /></label>' +
+      '<label class="btn btn-ghost doc-upload" data-drop-kind="cover_letter">' + ICON.attach + "Cover letter" +
+      '<input type="file" data-doc-kind="cover_letter" hidden multiple /></label>' +
+      '<label class="btn btn-ghost doc-upload" data-drop-kind="other">' + ICON.attach + "Other" +
+      '<input type="file" data-doc-kind="other" hidden multiple /></label>' +
+      "</div>" +
+      '<p class="doc-drop-hint" data-drop-hint>Drag files here to attach them — drop onto a button to set its type.</p>' +
       "</div>" +
       '<ul class="doc-list">' + docs + "</ul>" +
       "</section>" +
@@ -1377,11 +1437,12 @@
     });
   }
 
-  async function uploadDocument(appId, kind, file) {
-    if (!file) return;
+  async function uploadDocument(appId, kind, file, options) {
+    if (!file) return false;
+    const quiet = options && options.quiet;
     if (file.size > MAX_UPLOAD) {
-      toast("Files must be 10 MB or smaller", true);
-      return;
+      if (!quiet) toast("Files must be 10 MB or smaller", true);
+      throw new Error("Files must be 10 MB or smaller");
     }
     try {
       const data = await readFileBase64(file);
@@ -1394,11 +1455,62 @@
           data: data,
         }),
       });
-      toast("Attached " + file.name);
-      openDrawer(appId);
+      if (!quiet) {
+        toast("Attached " + file.name);
+        openDrawer(appId);
+      }
+      return true;
     } catch (error) {
-      toast(error.message, true);
+      if (!quiet) toast(error.message, true);
+      throw error;
     }
+  }
+
+  /* Dropped files have no type, so guess from the name; anything unrecognised
+     lands in Other. */
+  function inferDocKind(filename) {
+    const name = String(filename || "").toLowerCase();
+    if (/cover[\s_-]*letter/.test(name)) return "cover_letter";
+    if (/(^|[^a-z])(resume|resumé|cv)([^a-z]|$)/.test(name)) return "resume";
+    return "other";
+  }
+
+  async function uploadDocuments(appId, kind, files) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!appId || !list.length) return;
+    const zone = $("[data-doc-drop]");
+    if (zone && zone.classList.contains("is-busy")) return;
+    const hint = zone ? zone.querySelector("[data-drop-hint]") : null;
+    if (zone) zone.classList.add("is-busy");
+    if (hint) {
+      hint.textContent =
+        "Uploading " + list.length + " file" + (list.length === 1 ? "" : "s") + "…";
+    }
+    let done = 0;
+    let tooBig = 0;
+    let failed = 0;
+    for (const file of list) {
+      if (file.size > MAX_UPLOAD) {
+        tooBig += 1;
+        continue;
+      }
+      try {
+        await uploadDocument(appId, kind || inferDocKind(file.name), file, { quiet: true });
+        done += 1;
+      } catch (error) {
+        failed += 1;
+      }
+    }
+    if (done) {
+      toast(
+        list.length === 1 && done === 1
+          ? "Attached " + list[0].name
+          : "Attached " + done + " document" + (done === 1 ? "" : "s")
+      );
+    }
+    if (tooBig) toast(tooBig + " file" + (tooBig === 1 ? "" : "s") + " over the 10 MB limit skipped", true);
+    if (failed) toast(failed + " file" + (failed === 1 ? "" : "s") + " could not be attached", true);
+    if (done && state.drawerId === appId) openDrawer(appId);
   }
 
   async function deleteDocument(appId, docId) {
@@ -1432,22 +1544,51 @@
     }
   }
 
-  async function saveGoal(key, value) {
-    const goal = Math.max(1, Math.min(100, Math.round(Number(value) || 0)));
-    if (!goal) {
-      render();
+  /* ---------------- settings ---------------- */
+
+  function openSettings() {
+    $("#settings-daily").value = state.settings.daily_goal;
+    $("#settings-weekly").value = state.settings.weekly_goal;
+    const error = $("#settings-error");
+    error.hidden = true;
+    error.textContent = "";
+    $("#settings-backdrop").hidden = false;
+    document.body.classList.add("no-scroll");
+    window.setTimeout(() => $("#settings-daily").focus(), 30);
+  }
+
+  function closeSettings() {
+    $("#settings-backdrop").hidden = true;
+    document.body.classList.remove("no-scroll");
+  }
+
+  async function saveSettings(event) {
+    event.preventDefault();
+    const daily = Number($("#settings-daily").value);
+    const weekly = Number($("#settings-weekly").value);
+    const valid = (value) => Number.isInteger(value) && value >= 1 && value <= 100;
+    const box = $("#settings-error");
+    if (!valid(daily) || !valid(weekly)) {
+      box.textContent = "Enter whole numbers between 1 and 100 for both goals.";
+      box.hidden = false;
       return;
     }
+    const button = $("#settings-save");
+    button.disabled = true;
     try {
       const saved = await api("/api/settings", {
         method: "PATCH",
-        body: JSON.stringify({ [key]: goal }),
+        body: JSON.stringify({ daily_goal: daily, weekly_goal: weekly }),
       });
       state.settings = Object.assign({}, state.settings, saved);
       render();
-    } catch (error) {
-      toast(error.message, true);
-      render();
+      closeSettings();
+      toast("Goals updated");
+    } catch (err) {
+      box.hidden = false;
+      box.textContent = err.message;
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -1764,10 +1905,10 @@
     }
   }
 
-  function toast(message, isError) {
+  function toast(message, isError, variant) {
     const container = $("#toasts");
     const element = document.createElement("div");
-    element.className = "toast" + (isError ? " is-error" : "");
+    element.className = "toast" + (isError ? " is-error" : "") + (variant ? " is-" + variant : "");
     element.textContent = message;
     container.appendChild(element);
     while (container.children.length > 3) container.firstElementChild.remove();
@@ -2178,6 +2319,10 @@
         openModal(null);
         return;
       }
+      if (event.target.closest('[data-action="open-settings"]')) {
+        openSettings();
+        return;
+      }
       if (event.target.closest('[data-action="go-to-apply"]')) {
         setTab("to_apply");
         return;
@@ -2205,7 +2350,8 @@
     document.addEventListener("keydown", (event) => {
       const isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
       if (event.key === "Escape") {
-        if (!$("#preview-backdrop").hidden) closePreview();
+        if (!$("#settings-backdrop").hidden) closeSettings();
+        else if (!$("#preview-backdrop").hidden) closePreview();
         else if (!$("#modal-backdrop").hidden) closeModal();
         else if (!$(".confirm-backdrop")) {
           if (state.drawerId) closeDrawer();
@@ -2231,13 +2377,53 @@
       if (event.target.id === "preview-backdrop") closePreview();
     });
 
-    $("#goal-list").addEventListener("change", (event) => {
-      const input = event.target.closest("[data-goal]");
-      if (!input) return;
-      saveGoal(input.dataset.goal, input.value);
+    $("#settings-btn").addEventListener("click", openSettings);
+    $("#settings-close").addEventListener("click", closeSettings);
+    $("#settings-cancel").addEventListener("click", closeSettings);
+    $("#settings-form").addEventListener("submit", saveSettings);
+    $("#settings-backdrop").addEventListener("click", (event) => {
+      if (event.target.id === "settings-backdrop") closeSettings();
     });
 
     const drawer = $("#drawer");
+
+    const clearDropTarget = (zone) => {
+      zone.classList.remove("is-dragover");
+      $$(".doc-upload", zone).forEach((button) => button.classList.remove("is-dragover"));
+    };
+
+    drawer.addEventListener("dragover", (event) => {
+      const zone = event.target.closest("[data-doc-drop]");
+      if (!zone || !event.dataTransfer) return;
+      const types = Array.from(event.dataTransfer.types || []);
+      if (types.length && !types.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      zone.classList.add("is-dragover");
+      const target = event.target.closest("[data-drop-kind]");
+      $$(".doc-upload", zone).forEach((button) =>
+        button.classList.toggle("is-dragover", button === target)
+      );
+    });
+
+    drawer.addEventListener("dragleave", (event) => {
+      const zone = event.target.closest("[data-doc-drop]");
+      if (!zone || zone.contains(event.relatedTarget)) return;
+      clearDropTarget(zone);
+    });
+
+    drawer.addEventListener("drop", (event) => {
+      const zone = event.target.closest("[data-doc-drop]");
+      if (!zone) return;
+      event.preventDefault();
+      clearDropTarget(zone);
+      if (!state.drawerId) return;
+      const target = event.target.closest("[data-drop-kind]");
+      const files = event.dataTransfer ? Array.from(event.dataTransfer.files || []) : [];
+      if (!files.length) return;
+      uploadDocuments(state.drawerId, target ? target.dataset.dropKind : null, files);
+    });
+
     drawer.addEventListener("change", (event) => {
       const select = event.target.closest("[data-drawer-status]");
       if (select) {
@@ -2245,10 +2431,10 @@
         return;
       }
       const upload = event.target.closest("[data-doc-kind]");
-      if (upload && upload.files && upload.files[0]) {
-        const file = upload.files[0];
+      if (upload && upload.files && upload.files.length) {
+        const files = Array.from(upload.files);
         upload.value = "";
-        uploadDocument(state.drawerId, upload.dataset.docKind, file);
+        uploadDocuments(state.drawerId, upload.dataset.docKind, files);
       }
     });
 
