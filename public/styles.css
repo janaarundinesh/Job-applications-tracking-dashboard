@@ -841,9 +841,22 @@ kbd {
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-.follow-main { min-width: 0; }
-.follow-company { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.follow-step { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.follow-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.follow-company,
+.follow-step {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.follow-company { font-size: 12.5px; font-weight: 500; }
+.follow-step { font-size: 11px; color: var(--text-faint); }
 
 .follow-due {
   font-size: 11px;
