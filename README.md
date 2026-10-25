@@ -87,6 +87,8 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 
 The interface uses an Apple-style glass treatment: translucent frosted panels over a slowly drifting colour backdrop, a specular highlight along the top edge of each surface, soft layered shadows and rounded 20–26 px corners. Sheets, the detail drawer and dialogs are more opaque than the panels behind them, so text stays comfortable while the glass still reads as glass.
 
+Cards respond to the pointer: stat cards and panels lift two pixels while a soft light glint fades in behind their content, goal rings glow, board cards raise with an accent rim, document rows lift, and table rows and follow-up items gain a slim accent edge. The effects only run on devices with a real pointer and are reduced to colour changes when the system asks for reduced motion.
+
 Both themes are glass: the header toggle switches between dark smoked glass and light frosted glass. Everything is driven by custom properties at the top of `styles.css` if you want to retune it:
 
 - `--surface`, `--surface-raised`, `--surface-soft` — translucent panel tints; `--surface-solid` is the opaque base the drawer, dialogs and preview sheet mix with.

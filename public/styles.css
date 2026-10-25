@@ -435,6 +435,7 @@ kbd {
 
 .stat-card {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   padding: 16px 18px 15px;
   background-color: var(--surface);
@@ -444,6 +445,7 @@ kbd {
   box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-md);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.26s ease, box-shadow 0.26s ease, background-color 0.26s ease;
 }
 
 .stat-card::after {
@@ -455,6 +457,7 @@ kbd {
   opacity: 0.8;
   border-radius: 0 3px 3px 0;
   box-shadow: 0 0 18px -2px var(--tone, var(--accent));
+  transition: width 0.26s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
 }
 
 .stat-label {
@@ -490,6 +493,8 @@ kbd {
 }
 
 .panel {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   padding: 16px 18px 18px;
@@ -501,6 +506,7 @@ kbd {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   min-height: 190px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.26s ease, box-shadow 0.26s ease, background-color 0.26s ease;
 }
 
 .panel-head {
@@ -779,10 +785,15 @@ kbd {
   color: inherit;
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
+  transition: background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
-.follow-item:hover { background: var(--glass-tint); }
+.follow-item:hover {
+  background: var(--glass-tint);
+  transform: translateX(2px);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+}
 
 .follow-main { min-width: 0; }
 .follow-company { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -926,10 +937,13 @@ kbd {
 .apps-table tbody tr {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background-color 0.16s ease, box-shadow 0.16s ease;
 }
 .apps-table tbody tr:last-child { border-bottom: 0; }
-.apps-table tbody tr:hover { background: var(--wash); }
+.apps-table tbody tr:hover {
+  background: var(--wash);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 50%, transparent);
+}
 
 .apps-table td {
   padding: 11px 14px;
@@ -1225,9 +1239,12 @@ tr:hover .row-actions, .row-actions:focus-within, .row-actions.is-visible { opac
 .card-delete svg { width: 12px; height: 12px; }
 .app-card .card-role { padding-right: 20px; }
 .app-card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-md);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-strong));
+  transform: translateY(-3px);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 26px 46px -30px rgba(0, 0, 0, 0.95),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .app-card:active { cursor: grabbing; }
 .app-card.is-dragging { opacity: 0.4; transform: scale(0.98); }
@@ -2009,6 +2026,139 @@ tr:hover .row-actions, .row-actions:focus-within, .row-actions.is-visible { opac
 
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(6px); } }
+
+/* ---------------- hover interactions ---------------- */
+
+@media (hover: hover) {
+  /* A soft light glint that fades in behind the content of each card. */
+  .stat-card::before,
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(420px 200px at 14% -14%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 70%);
+    transition: opacity 0.3s ease;
+  }
+
+  .stat-card:hover,
+  .panel:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow:
+      inset 0 1px 0 var(--glass-edge),
+      0 32px 60px -38px rgba(0, 0, 0, 0.95),
+      0 12px 26px -22px rgba(0, 0, 0, 0.7);
+  }
+
+  .stat-card:hover::before,
+  .panel:hover::before { opacity: 1; }
+
+  .stat-card:hover::after {
+    width: 4px;
+    opacity: 1;
+  }
+
+  .goal-block {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    border-radius: 16px;
+    transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.26s ease, box-shadow 0.26s ease;
+  }
+
+  .goal-block:hover {
+    transform: translateY(-2px);
+    background: var(--glass-tint);
+    box-shadow: inset 0 1px 0 var(--glass-edge-soft), 0 16px 30px -26px rgba(0, 0, 0, 0.9);
+  }
+
+  .goal-ring { transition: filter 0.26s ease; }
+
+  .goal-block:hover .goal-ring {
+    filter: drop-shadow(0 10px 22px color-mix(in srgb, var(--accent) 38%, transparent));
+  }
+
+  .streak-flame {
+    transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.26s ease, box-shadow 0.26s ease;
+  }
+
+  .streak-flame:hover {
+    transform: translateY(-1px) scale(1.05);
+    border-color: var(--border-strong);
+    box-shadow: inset 0 1px 0 var(--glass-edge), 0 14px 26px -20px rgba(0, 0, 0, 0.9);
+  }
+
+  .streak-day { transition: background-color 0.2s ease, transform 0.2s ease; }
+  .streak-day:hover { transform: translateY(-1px); }
+
+  .streak-dot { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .streak-day:hover .streak-dot { transform: scale(1.2); }
+
+  .doc-item {
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  .doc-item:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    box-shadow: inset 0 1px 0 var(--glass-edge), 0 16px 30px -26px rgba(0, 0, 0, 0.9);
+  }
+
+  .doc-drop:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  }
+
+  .board-col:hover { border-color: var(--border-strong); }
+
+  .empty-icon {
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+  }
+
+  .empty-icon:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: inset 0 1px 0 var(--glass-edge), 0 20px 36px -22px rgba(0, 0, 0, 0.85);
+  }
+
+  .brand-mark {
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.24s ease;
+  }
+
+  .brand:hover .brand-mark {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 -7px 14px rgba(52, 26, 110, 0.35),
+      0 20px 38px -18px rgba(123, 140, 255, 0.95);
+  }
+
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(1px) scale(0.995); }
+}
+
+.follow-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card:hover,
+  .panel:hover,
+  .goal-block:hover,
+  .streak-flame:hover,
+  .streak-day:hover,
+  .doc-item:hover,
+  .empty-icon:hover,
+  .brand:hover .brand-mark,
+  .btn:hover,
+  .app-card:hover,
+  .follow-item:hover { transform: none; }
+
+  .stat-card::before,
+  .panel::before { display: none; }
+}
 
 /* ---------------- small glass details ---------------- */
 
