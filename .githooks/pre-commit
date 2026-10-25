@@ -1,0 +1,48 @@
+#!/bin/sh
+# Run the API test suite before every commit.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+# Bypass a single commit:
+#   git commit --no-verify
+#
+# The suite starts its own HTTP server against a throwaway database in a temp
+# directory, so it never touches data/ and can run while the app is open.
+
+# Pick an interpreter that has pytest: an explicit override, then a local
+# virtualenv, then whatever python3 is on PATH.
+PYTHON=${JOBPIPE_PYTHON:-}
+if [ -z "$PYTHON" ]; then
+  for candidate in .venv/bin/python venv/bin/python; do
+    if [ -x "$candidate" ]; then
+      PYTHON=$candidate
+      break
+    fi
+  done
+fi
+if [ -z "$PYTHON" ]; then
+  PYTHON=python3
+fi
+
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  echo "pre-commit: $PYTHON not found — skipping tests" >&2
+  exit 0
+fi
+
+if ! "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  echo "pre-commit: pytest is not installed for $PYTHON — skipping tests" >&2
+  echo "            create .venv and install the dev requirements to enable the hook:" >&2
+  echo "              python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt" >&2
+  exit 0
+fi
+
+echo "pre-commit: running the API tests ($PYTHON -m pytest -q)"
+
+if ! "$PYTHON" -m pytest -q; then
+  echo >&2
+  echo "pre-commit: tests failed — commit aborted." >&2
+  echo "            fix the tests, or bypass once with: git commit --no-verify" >&2
+  exit 1
+fi
+
+echo "pre-commit: tests passed"

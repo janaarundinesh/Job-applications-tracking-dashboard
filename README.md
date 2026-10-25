@@ -118,6 +118,23 @@ python3 -m pytest -q
 
 It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings and JSON import. GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
+### Pre-commit hook
+
+A hook runs the same suite before every commit and aborts the commit if anything fails. Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook uses `$JOBPIPE_PYTHON` if set, otherwise `.venv/bin/python`, `venv/bin/python`, then `python3`. Create the virtualenv so it has pytest:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+```
+
+If the interpreter it finds has no pytest, the hook says so and lets the commit through rather than blocking on a missing tool; CI still runs the suite. Skip a single commit with `git commit --no-verify`.
+
 ## Files
 
 ```
@@ -125,7 +142,9 @@ server.py        HTTP server, JSON API, validation, SQLite schema, document stor
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI (HTML, CSS, vanilla JS — no build step)
 tests/           pytest suite exercising the API end to end
+.githooks/       pre-commit hook that runs the suite
 .github/         CI workflow that runs the tests
+requirements-dev.txt  pytest, only needed for running the tests
 data/            Created on first run: tracker.db + uploads/
 ```
 
