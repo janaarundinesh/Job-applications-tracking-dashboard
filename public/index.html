@@ -559,16 +559,70 @@
 <div class="modal-backdrop" id="settings-backdrop" hidden>
   <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="modal-head">
-      <div>
+      <button type="button" class="btn btn-icon settings-back" id="settings-back" aria-label="Back to settings options" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="settings-head-text">
         <h2 id="settings-title">Settings</h2>
-        <p class="modal-sub" id="settings-sub">Your details and the pace you want to keep.</p>
+        <p class="modal-sub" id="settings-sub">Options for this profile.</p>
       </div>
       <button type="button" class="btn btn-icon" id="settings-close" aria-label="Close settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </header>
-    <form id="settings-form" class="modal-body" novalidate>
-      <section class="settings-block">
+
+    <div class="modal-body" id="settings-hub">
+      <ul class="settings-menu" id="settings-menu">
+        <li>
+          <button type="button" class="settings-row" data-settings-view="profile">
+            <span class="avatar" id="settings-menu-avatar" aria-hidden="true">PE</span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Profile</span>
+              <span class="settings-row-meta" id="settings-menu-profile">Name and contact details</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="settings-row" data-settings-view="lock">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.4"/><path d="M8.5 10V7.5a3.5 3.5 0 017 0V10"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Lock</span>
+              <span class="settings-row-meta" id="settings-menu-lock">Off</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="settings-row" data-settings-view="goals">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Goals</span>
+              <span class="settings-row-meta" id="settings-menu-goals">3 a day · 10 a week</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="settings-row is-danger" data-settings-action="logout">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Log out</span>
+              <span class="settings-row-meta">Return to the user screen</span>
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <form id="settings-form" class="modal-body" novalidate hidden>
+      <section class="settings-block" data-settings-panel="profile" hidden>
         <h3 class="settings-heading">Profile</h3>
         <div class="field-row">
           <label class="field">
@@ -605,7 +659,7 @@
           <button type="button" class="btn btn-ghost danger-text" id="settings-delete-profile">Delete this profile…</button>
         </div>
       </section>
-      <section class="settings-block">
+      <section class="settings-block" data-settings-panel="goals" hidden>
         <h3 class="settings-heading">Goals</h3>
         <div class="field-row">
           <label class="field">
@@ -619,7 +673,7 @@
         </div>
         <p class="mode-hint">A day counts once at least one application has been sent that day. Weeks run Monday to Sunday and the Overview shows your progress.</p>
       </section>
-      <section class="settings-block">
+      <section class="settings-block" data-settings-panel="lock" hidden>
         <h3 class="settings-heading">PIN lock</h3>
         <p class="settings-pin-status" id="settings-pin-status">Off — this profile opens without a PIN.</p>
         <div class="field" id="settings-pin-current-wrap" hidden>
@@ -646,8 +700,8 @@
       <p class="form-error" id="settings-error" hidden></p>
     </form>
     <footer class="modal-foot">
-      <button type="button" class="btn btn-ghost" id="settings-cancel">Cancel</button>
-      <button type="submit" form="settings-form" class="btn btn-primary" id="settings-save">Save changes</button>
+      <button type="button" class="btn btn-ghost" id="settings-cancel">Close</button>
+      <button type="submit" form="settings-form" class="btn btn-primary" id="settings-save" hidden>Save changes</button>
     </footer>
   </div>
 </div>

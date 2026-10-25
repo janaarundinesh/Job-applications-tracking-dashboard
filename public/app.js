@@ -63,6 +63,7 @@
     profileId: null,
     unlockId: null,
     gate: false,
+    settingsView: "menu",
     loading: true,
   };
 
@@ -2095,6 +2096,7 @@
       const index = state.profiles.findIndex((item) => item.id === profile.id);
       if (index !== -1) state.profiles[index] = Object.assign({}, state.profiles[index], { locked: true });
       renderPinSettings();
+      renderSettingsMenu();
       renderProfilesList();
       renderProfileChrome();
       toast(firstTime ? "PIN set — this profile now asks for it" : "PIN changed");
@@ -2124,6 +2126,7 @@
       const index = state.profiles.findIndex((item) => item.id === profile.id);
       if (index !== -1) state.profiles[index] = Object.assign({}, state.profiles[index], { locked: false });
       renderPinSettings();
+      renderSettingsMenu();
       renderProfilesList();
       renderProfileChrome();
       toast("PIN lock removed");
@@ -2132,6 +2135,73 @@
     } finally {
       button.disabled = false;
     }
+  }
+
+  function renderSettingsMenu() {
+    const profile = activeProfile();
+    $("#settings-menu-avatar").textContent = initials(profile ? profile.name : "");
+    $("#settings-menu-profile").textContent = profile
+      ? [profile.name, profile.headline || profile.email].filter(Boolean).join(" · ")
+      : "No profile selected";
+    const locked = !!(profile && profile.locked);
+    $("#settings-menu-lock").textContent = locked
+      ? "On — asks for a PIN"
+      : "Off — opens without a PIN";
+    $("#settings-menu-goals").textContent =
+      state.settings.daily_goal + " a day · " + state.settings.weekly_goal + " a week";
+  }
+
+  function showSettingsView(view) {
+    const target = ["profile", "lock", "goals"].includes(view) ? view : "menu";
+    const profile = activeProfile();
+    state.settingsView = target;
+    $("#settings-hub").hidden = target !== "menu";
+    $("#settings-form").hidden = target === "menu";
+    $$("[data-settings-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.settingsPanel !== target;
+    });
+    $("#settings-back").hidden = target === "menu";
+    $("#settings-save").hidden = target === "menu" || target === "lock";
+    $("#settings-title").textContent =
+      { menu: "Settings", profile: "Profile", lock: "Lock", goals: "Goals" }[target];
+    $("#settings-sub").textContent = {
+      menu: "Options for this profile.",
+      profile: "Details for " + (profile ? profile.name : "this profile") + ".",
+      lock: "Protect " + (profile ? profile.name : "this profile") + " with a PIN.",
+      goals: "Set the pace you want to keep.",
+    }[target];
+    const error = $("#settings-error");
+    error.hidden = true;
+    error.textContent = "";
+    if (target === "menu") {
+      const first = $("#settings-menu .settings-row");
+      if (first) window.setTimeout(() => first.focus(), 30);
+    }
+  }
+
+  async function logoutProfile() {
+    const profile = activeProfile();
+    closeSettings();
+    if (profile) {
+      try {
+        await api("/api/profiles/" + profile.id + "/lock", {
+          method: "POST",
+          body: "{}",
+        });
+      } catch (error) {
+        /* the token expires on its own; logging out locally is enough */
+      }
+      clearToken(profile.id);
+    }
+    rememberSession(null);
+    state.apps = [];
+    state.trash = [];
+    state.settings = Object.assign({}, DEFAULT_GOALS);
+    state.selection.clear();
+    if (state.drawerId) closeDrawer();
+    render();
+    showWelcome();
+    toast("Logged out");
   }
 
   function openSettings() {
@@ -2148,13 +2218,11 @@
     $("#settings-daily").value = state.settings.daily_goal;
     $("#settings-weekly").value = state.settings.weekly_goal;
     renderPinSettings();
+    renderSettingsMenu();
     $("#settings-delete-profile").hidden = state.profiles.length <= 1;
-    const error = $("#settings-error");
-    error.hidden = true;
-    error.textContent = "";
     $("#settings-backdrop").hidden = false;
     document.body.classList.add("no-scroll");
-    window.setTimeout(() => $("#settings-name").focus(), 30);
+    showSettingsView("menu");
   }
 
   function closeSettings() {
@@ -2208,6 +2276,7 @@
       });
       state.settings = Object.assign({}, state.settings, saved);
       render();
+      renderSettingsMenu();
       closeSettings();
       toast("Settings updated");
     } catch (err) {
@@ -3091,7 +3160,10 @@
         if (!$("#newprofile-backdrop").hidden) closeNewProfile();
         else if (!$("#unlock-backdrop").hidden) closeUnlock();
         else if (!$("#profiles-backdrop").hidden) closeProfiles();
-        else if (!$("#settings-backdrop").hidden) closeSettings();
+        else if (!$("#settings-backdrop").hidden) {
+          if (state.settingsView !== "menu") showSettingsView("menu");
+          else closeSettings();
+        }
         else if (!$("#preview-backdrop").hidden) closePreview();
         else if (!$("#modal-backdrop").hidden) closeModal();
         else if (!$(".confirm-backdrop")) {
@@ -3170,6 +3242,16 @@
     });
 
     $("#settings-btn").addEventListener("click", openSettings);
+    $("#settings-back").addEventListener("click", () => showSettingsView("menu"));
+    $("#settings-menu").addEventListener("click", (event) => {
+      const action = event.target.closest("[data-settings-action]");
+      if (action && action.dataset.settingsAction === "logout") {
+        logoutProfile();
+        return;
+      }
+      const row = event.target.closest("[data-settings-view]");
+      if (row) showSettingsView(row.dataset.settingsView);
+    });
     $("#settings-close").addEventListener("click", closeSettings);
     $("#settings-cancel").addEventListener("click", closeSettings);
     $("#settings-form").addEventListener("submit", saveSettings);

@@ -2161,6 +2161,72 @@ tr:hover .row-actions, .row-actions:focus-within, .row-actions.is-visible { opac
 #profiles-add { margin-right: auto; }
 .settings-profile-actions { display: flex; justify-content: flex-start; }
 
+.settings-head-text { flex: 1; min-width: 0; }
+.settings-back { margin-right: 2px; color: var(--text-dim); }
+.settings-back svg { width: 18px; height: 18px; }
+
+.settings-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--glass-tint);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft);
+  transition: background 0.15s, border-color 0.15s;
+}
+.settings-row:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.settings-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.settings-row .avatar { width: 32px; height: 32px; font-size: 11px; }
+
+.settings-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  color: var(--text-dim);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+.settings-icon svg { width: 16px; height: 16px; }
+
+.settings-row-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.settings-row-label { font-size: 13.5px; font-weight: 600; }
+.settings-row-meta {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-row-chevron { flex: none; width: 16px; height: 16px; color: var(--text-faint); }
+
+.settings-row.is-danger .settings-icon {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+.settings-row.is-danger .settings-row-label { color: var(--danger); }
+.settings-row.is-danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
 .settings-block { display: flex; flex-direction: column; gap: 12px; }
 .settings-block + .settings-block {
   padding-top: 14px;

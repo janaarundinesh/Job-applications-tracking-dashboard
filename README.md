@@ -42,7 +42,7 @@ Click any row or card to open the detail drawer: stage, dates, salary, source, c
 
 The app keeps separate profiles — for example one for your own search and one for freelance work. Each profile has its own jobs, trash, documents and goals; nothing is shared between them.
 
-**The picker comes first.** Opening the dashboard in a new browser session shows a user screen with one round avatar per profile, its job count and a lock badge when it is PIN protected. Click an avatar to open that profile; the plus circle beside them adds someone new. Reloading the same tab goes straight back into the profile you were using — the picker returns in a new tab or after closing the browser.
+**The picker comes first.** Opening the dashboard in a new browser session shows a user screen with one round avatar per profile, its job count and a lock badge when it is PIN protected. Click an avatar to open that profile; the plus circle beside them adds someone new. Reloading the same tab goes straight back into the profile you were using — the picker returns in a new tab or after closing the browser. **Log out** in Settings drops the session (and the unlock token) and returns to the picker.
 
 - The **profile button** in the header (your initials and the profile name) opens the same list as a dialog, with the active profile tagged **Current**, and **New profile** there creates another user.
 - **Clicking a profile** switches to it: the dashboard reloads with that profile's jobs and goals.
@@ -52,7 +52,7 @@ Contact details are edited in **Settings** and apply to the profile you are on.
 
 ## PIN lock
 
-Any profile can be locked with a 4–8 digit PIN. It is set, changed or removed in **Settings → PIN lock**; changing or removing it asks for the current PIN.
+Any profile can be locked with a 4–8 digit PIN. It is set, changed or removed in **Settings → Lock**; changing or removing it asks for the current PIN.
 
 - A locked profile shows a padlock in the picker and asks for the PIN before its jobs are opened. Pressing the profile asks for the PIN, a wrong one says so and lets you try again.
 - The lock is enforced by the local server, not just the screen: jobs, documents, goals and trash of a locked profile answer `423 Locked` until a valid unlock token is supplied. The token lives in memory on the server and in that browser tab only; it lasts 12 hours, a page reload keeps it, and restarting the server or closing the tab asks for the PIN again.
@@ -100,7 +100,7 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 ## Using the dashboard
 
 - **Search / filters** — search company, role, location, source, description and notes; filter by stage, location type and source. The same filters apply to whichever tab you are on (stage only matters for Applied).
-- **Settings** — the gear in the header opens one dialog with three parts: **Profile** (name, headline, email, phone, location, links), **Goals** (daily and weekly) and **PIN lock**. *Save changes* stores the details and goals together for the profile you are currently on; the PIN and *Delete this profile…* are separate actions.
+- **Settings** — the gear in the header opens a menu for the current profile: **Profile** (name, headline, email, phone, location, links, and *Delete this profile…*), **Lock** (the PIN), **Goals** (daily and weekly) and **Log out**. Each option opens its own panel with a back arrow, and `Esc` returns to the menu before closing. *Save changes* stores the details and goals together; the PIN actions are buttons inside the Lock panel.
 - **Sorting** — click table headers.
 - **Follow-ups** — any Applied job with a next-step date in the next 7 days appears on the Overview. Every due label — "Due tomorrow", "Due in 3d", "Overdue by 2d" — is shown in red, with overdue ones in a heavier weight and a stronger tint. The same red labels appear under the next step in the Applied table and in the detail drawer.
 - **Goals and streak** — the Overview has an **Application goals** panel with a ring for each target: daily and weekly (default 3 a day, 10 a week). Each ring shows applications sent against the target and turns green once it is met, and crossing a target while you use the app sets off a short confetti burst with a "Daily/Weekly goal complete" toast (confetti is skipped if your system asks for reduced motion; the toast still appears). Set the numbers in **Settings** — the gear in the header, or **Set goals** in the panel — and they are stored for the current profile in the database. A day counts once you have at least one application with that applied date; the week runs Monday to Sunday.
