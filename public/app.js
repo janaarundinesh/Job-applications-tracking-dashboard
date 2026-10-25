@@ -265,8 +265,34 @@
 
   /* ---------------- api ---------------- */
 
+  // WebKit reports a dead connection as "Load failed" and Chrome as "Failed to
+  // fetch"; both mean the request never reached the server.
+  function isNetworkError(error) {
+    return error instanceof TypeError || /load failed|failed to fetch|network ?error/i.test((error && error.message) || "");
+  }
+
   async function api(path, options) {
-    const response = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options));
+    const init = Object.assign({ headers: { "Content-Type": "application/json" } }, options);
+    let response;
+    try {
+      response = await fetch(path, init);
+    } catch (error) {
+      // A laptop waking from sleep or a restarted server leaves a stale
+      // keep-alive socket behind. One fresh attempt usually gets through.
+      // POST is left alone so a retry can never create a duplicate.
+      const canRetry = (init.method || "GET").toUpperCase() !== "POST";
+      if (!canRetry || !isNetworkError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      try {
+        response = await fetch(path, init);
+      } catch (retryError) {
+        throw new Error(
+          window.location.protocol === "file:"
+            ? "Open the dashboard from http://127.0.0.1:8787 (run python3 server.py) instead of opening the HTML file directly."
+            : "Can't reach the tracker server. Check that it is still running (python3 server.py), then try again."
+        );
+      }
+    }
     const text = await response.text();
     let payload = null;
     if (text) {

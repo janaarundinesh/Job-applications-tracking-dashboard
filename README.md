@@ -22,6 +22,8 @@ Options:
 
 Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
 
+Always use the printed URL rather than opening `public/index.html` directly — the page needs the server for every save. If an action reports that it cannot reach the tracker server, the process has stopped; start it again. A single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
+
 ## The three tabs
 
 - **Overview** — total applications, active, interviews, offers, response rate, saved jobs, the stage funnel, applications per week (last 8 weeks) and follow-ups due in the next 7 days.
