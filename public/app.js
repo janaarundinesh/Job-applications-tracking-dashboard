@@ -765,6 +765,8 @@
     const isApplied = state.tab === "applied";
     $("#workspace-title").textContent = isTrash ? "Trash" : isToApply ? "To apply" : "Applied";
     $("#workspace-toolbar").hidden = isTrash;
+    $("#trash-toolbar").hidden = !isTrash;
+    $("#empty-trash-btn").disabled = !state.trash.length;
     $("#view-switch").hidden = isToApply || isTrash;
     $("#filter-status").hidden = isToApply || isTrash;
 
@@ -1877,6 +1879,26 @@
     });
   }
 
+  function confirmEmptyTrash() {
+    if (!state.trash.length) return;
+    const count = state.trash.length;
+    confirmAction({
+      title: "Empty the trash?",
+      text:
+        count + " deleted job" + (count === 1 ? "" : "s") +
+        " and all of their attached documents (resume, cover letter, files) will be removed from the database and disk." +
+        " This cannot be undone.",
+      okLabel: "Empty trash",
+      onConfirm: async () => {
+        const result = await api("/api/trash", { method: "DELETE" });
+        state.trash = [];
+        render();
+        const removed = result && result.deleted ? result.deleted : count;
+        toast("Trash emptied — " + removed + " job" + (removed === 1 ? "" : "s") + " deleted");
+      },
+    });
+  }
+
   function confirmPurge(app) {
     confirmAction({
       title: "Delete permanently?",
@@ -2381,6 +2403,7 @@
     $("#settings-close").addEventListener("click", closeSettings);
     $("#settings-cancel").addEventListener("click", closeSettings);
     $("#settings-form").addEventListener("submit", saveSettings);
+    $("#empty-trash-btn").addEventListener("click", confirmEmptyTrash);
     $("#settings-backdrop").addEventListener("click", (event) => {
       if (event.target.id === "settings-backdrop") closeSettings();
     });

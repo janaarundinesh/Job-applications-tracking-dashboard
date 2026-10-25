@@ -512,6 +512,32 @@ def restore_application(db_path, app_id):
         conn.close()
 
 
+def purge_trash(db_path):
+    """Permanently remove every trashed job, its rows and its uploaded files."""
+    conn = connect(db_path)
+    try:
+        ids = [
+            row["id"]
+            for row in conn.execute(
+                "SELECT id FROM applications WHERE deleted_at IS NOT NULL"
+            ).fetchall()
+        ]
+        if not ids:
+            return {"deleted": 0, "files": 0}
+        placeholders = ",".join("?" for _ in ids)
+        files = conn.execute(
+            "SELECT COUNT(*) AS count FROM documents WHERE application_id IN (%s)" % placeholders,
+            ids,
+        ).fetchone()["count"]
+        conn.execute("DELETE FROM applications WHERE deleted_at IS NOT NULL")
+        conn.commit()
+    finally:
+        conn.close()
+    for app_id in ids:
+        shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
+    return {"deleted": len(ids), "files": files}
+
+
 def purge_application(db_path, app_id):
     """Permanently remove a trashed job, its rows and its uploaded files."""
     conn = connect(db_path)
@@ -885,6 +911,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(extract_job(target.strip()))
                 except ExtractionError as error:
                     raise ApiError(422, str(error))
+
+            if parts[0] == "trash":
+                if len(parts) != 1:
+                    raise ApiError(404, "Unknown endpoint")
+                if self.command != "DELETE":
+                    raise ApiError(405, "Method not allowed")
+                return self.send_json(purge_trash(self.db_path))
 
             if parts[0] == "settings":
                 if len(parts) != 1:

@@ -39,8 +39,9 @@ From Trash you can:
 
 - **Restore** a job, which puts it back in Applied or To apply exactly as it was.
 - **Delete forever**, which asks for a second confirmation and then removes the job's database row, its status history, all document records and every attached file from `data/uploads/`.
+- **Empty trash**, a button on the Trash tab that permanently clears the whole bin — every job, its notes, timeline and attached files — after one confirmation. It is disabled while the trash is empty.
 
-There is no automatic emptying: jobs stay in the trash until you restore or purge them.
+There is no automatic emptying otherwise: jobs stay in the trash until you restore or purge them.
 
 ## Adding jobs
 
@@ -109,6 +110,7 @@ DELETE /api/applications/<id>                 move job to trash (soft delete)
 DELETE /api/applications/<id>?permanent=1     permanently delete a trashed job + files
 POST   /api/applications/<id>/restore         restore a trashed job
 GET    /api/applications?trash=1              list trashed jobs
+DELETE /api/trash                             permanently delete every trashed job and its files
 POST   /api/applications/<id>/documents       upload { filename, kind, content_type, data (base64) }
 GET    /api/applications/<id>/documents/<doc> download a document
 GET    /api/applications/<id>/documents/<doc>?inline=1  preview a PDF, image or text file inline
