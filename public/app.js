@@ -2750,7 +2750,28 @@
 
   /* ---------------- boot ---------------- */
 
+  // Opened by double-clicking index.html: the app needs the local server, so
+  // forward as soon as it answers and otherwise keep this screen as a guide.
+  function startFromFile() {
+    const status = $("#file-guard-status");
+    if (!status) return;
+    fetch("http://127.0.0.1:8787/api/health", { mode: "no-cors", cache: "no-store" })
+      .then(() => {
+        status.textContent = "Server found — opening the dashboard…";
+        status.classList.add("is-found");
+        window.location.replace("http://127.0.0.1:8787");
+      })
+      .catch(() => {
+        status.textContent =
+          "The server did not answer automatically. If it is already running, use the button below; otherwise start it with the command above.";
+      });
+  }
+
   function init() {
+    if (window.location.protocol === "file:") {
+      startFromFile();
+      return;
+    }
     $("#form-applied-on").value = todayISO();
     $("#form-status").innerHTML = statusSelectOptions("applied", false);
     $("#filter-status").innerHTML = statusSelectOptions("", true);

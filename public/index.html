@@ -6,9 +6,33 @@
 <title>Job Pipeline — Application Tracker</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="styles.css" />
+<script>
+  // Opened straight from disk? Show the start screen instead of the app.
+  if (window.location.protocol === "file:") document.documentElement.classList.add("is-file");
+</script>
 </head>
 <body>
 <div class="ambient" aria-hidden="true"></div>
+
+<div class="file-guard" id="file-guard">
+  <div class="file-guard-card">
+    <span class="file-guard-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M4 7h16M4 12h10M4 17h6" />
+        <circle cx="18.5" cy="16.5" r="2.5" />
+      </svg>
+    </span>
+    <h1>Start the local server first</h1>
+    <p>
+      Job Pipeline keeps your data in a small Python server on this machine, so opening
+      <code>index.html</code> from Finder cannot reach it. Start the server, then use the dashboard it opens.
+    </p>
+    <pre class="file-guard-cmd"><code>python3 server.py --open</code></pre>
+    <p class="file-guard-hint">Run it from the project folder and keep the Terminal window open while you use the dashboard.</p>
+    <p class="file-guard-status" id="file-guard-status">Checking whether the server is already running…</p>
+    <a class="btn btn-primary" id="file-guard-open" href="http://127.0.0.1:8787">Open the dashboard</a>
+  </div>
+</div>
 
 <header class="topbar">
   <a class="brand" href="#" aria-label="Job Pipeline home">
