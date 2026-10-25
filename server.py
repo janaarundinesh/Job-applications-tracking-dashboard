@@ -10,6 +10,7 @@ Serves a small JSON API backed by SQLite plus the static frontend in ./public.
 import argparse
 import base64
 import binascii
+import glob
 import hashlib
 import hmac
 import json
@@ -20,9 +21,11 @@ import secrets
 import shutil
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -39,6 +42,15 @@ PHASES = ["to_apply", "applied"]
 DOC_KINDS = ["resume", "cover_letter", "other"]
 MAX_BODY = 20 * 1024 * 1024
 UPLOAD_LIMIT = 10 * 1024 * 1024
+
+# The API only answers the dashboard it serves: a loopback Host header (which
+# defeats DNS rebinding), an Origin from this very server on writes, and a token
+# handed out by GET /api/session that no other origin can read.
+API_TOKEN = secrets.token_urlsafe(32)
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+# One database snapshot per day, keeping the last two weeks.
+BACKUP_KEEP = 14
 
 TEXT_LIMITS = {
     "company": 160,
@@ -187,6 +199,92 @@ def uploads_root(db_path):
     else:
         base = os.path.dirname(os.path.abspath(db_path))
     return os.path.join(base, "uploads")
+
+
+def host_name(value):
+    """The host part of a Host header or URL authority (IPv6 brackets removed)."""
+    text = (value or "").strip().lower()
+    if "://" in text:
+        text = text.split("://", 1)[1].split("/", 1)[0]
+    if text.startswith("["):
+        return text[1:].split("]", 1)[0]
+    if text.count(":") == 1:
+        return text.split(":", 1)[0]
+    return text
+
+
+def backup_database(db_path):
+    """Copy the database into data/backups once a day so a bad change is undoable."""
+    if db_path == ":memory:":
+        return None
+    folder = os.path.join(os.path.dirname(os.path.abspath(db_path)), "backups")
+    os.makedirs(folder, exist_ok=True)
+    target = os.path.join(folder, "tracker-%s.db" % datetime.now().strftime("%Y-%m-%d"))
+    if not os.path.exists(target):
+        source = connect(db_path)
+        try:
+            copy = sqlite3.connect(target)
+            try:
+                source.backup(copy)
+            finally:
+                copy.close()
+        finally:
+            source.close()
+    prune_backups(folder)
+    return target
+
+
+def prune_backups(folder, keep=BACKUP_KEEP):
+    paths = sorted(glob.glob(os.path.join(folder, "tracker-*.db")))
+    for path in paths[:-keep]:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def build_backup_archive(db_path):
+    """Zip a consistent snapshot of the database and every uploaded file."""
+    handle = tempfile.NamedTemporaryFile(
+        prefix="jobpipe-backup-", suffix=".zip", delete=False
+    )
+    handle.close()
+    snapshot = handle.name + ".db"
+    try:
+        if db_path != ":memory:":
+            source = connect(db_path)
+            try:
+                copy = sqlite3.connect(snapshot)
+                try:
+                    source.backup(copy)
+                finally:
+                    copy.close()
+            finally:
+                source.close()
+        with zipfile.ZipFile(handle.name, "w", zipfile.ZIP_DEFLATED) as archive:
+            if os.path.isfile(snapshot):
+                archive.write(snapshot, "tracker.db")
+            uploads = uploads_root(db_path)
+            for root, _dirs, files in os.walk(uploads):
+                for name in files:
+                    path = os.path.join(root, name)
+                    archive.write(path, os.path.join("uploads", os.path.relpath(path, uploads)))
+            archive.writestr(
+                "README.txt",
+                "Job Pipeline backup taken %s\n\n"
+                "tracker.db is the SQLite database; uploads/ holds the documents "
+                "that belong to each job (one folder per job id).\n" % now_iso(),
+            )
+        return handle.name
+    except Exception:
+        try:
+            os.remove(handle.name)
+        except OSError:
+            pass
+        raise
+    finally:
+        if os.path.isfile(snapshot):
+            os.remove(snapshot)
 
 
 def ensure_default_profile(conn):
@@ -1136,6 +1234,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # Set by main()
     db_path = DEFAULT_DB
+    # Host names to accept besides loopback (only when --host binds elsewhere).
+    allowed_hosts = frozenset()
 
     def log_message(self, fmt, *args):
         sys.stderr.write(
@@ -1234,6 +1334,27 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(chunk)
 
+    def send_archive(self, path, download_name):
+        try:
+            with open(path, "rb") as handle:
+                body = handle.read()
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "Content-Disposition",
+            "attachment; filename*=UTF-8''%s" % quote(download_name),
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
     def read_json(self):
         self._body_read = True
         try:
@@ -1290,6 +1411,52 @@ class Handler(BaseHTTPRequestHandler):
         if self.command in ("GET", "HEAD"):
             return self.serve_static(path)
         return self.send_error_json(405, "Method not allowed")
+
+    def origin_allowed(self):
+        """True when a write came from a page this server itself is serving."""
+        source = (self.headers.get("Origin") or "").strip()
+        if source in ("", "null"):
+            # Older browsers only send Referer on same-origin writes.
+            source = (self.headers.get("Referer") or "").strip()
+        if not source:
+            return False
+        parsed = urlparse(source)
+        if parsed.scheme != "http":
+            return False
+        origin_host = host_name(parsed.netloc)
+        if origin_host not in LOOPBACK_HOSTS and origin_host not in self.allowed_hosts:
+            return False
+        try:
+            port = parsed.port
+        except ValueError:
+            return False
+        return port == self.server.server_address[1]
+
+    def guard(self, parts):
+        """Refuse API calls that did not come from this dashboard.
+
+        Any web page the browser visits can send requests to a local port, so the
+        API checks who is asking: the health probe stays open for the start
+        screen, document downloads stay header-free because browsers open them
+        directly, and everything else needs the loopback Host, a same-origin
+        write and the token from /api/session.
+        """
+        if parts[0] == "health":
+            return
+        host = host_name(self.headers.get("Host") or "")
+        if host not in LOOPBACK_HOSTS and host not in self.allowed_hosts:
+            raise ApiError(403, "This server only answers on this machine")
+
+        is_document_download = (
+            len(parts) == 4 and parts[0] == "applications" and parts[2] == "documents"
+        )
+        if is_document_download or parts[0] == "session":
+            return
+        if self.command not in ("GET", "HEAD") and not self.origin_allowed():
+            raise ApiError(403, "Requests must come from the dashboard itself")
+        token = (self.headers.get("X-Api-Token") or "").strip()
+        if not hmac.compare_digest(token, API_TOKEN):
+            raise ApiError(403, "Session expired — reload the dashboard")
 
     def profile_id(self):
         """The profile a request works on: X-Profile-Id, else the first profile."""
@@ -1382,6 +1549,18 @@ class Handler(BaseHTTPRequestHandler):
 
             if parts[0] == "health" and self.command == "GET":
                 return self.send_json({"ok": True})
+
+            self.guard(parts)
+
+            if parts[0] == "session" and self.command == "GET":
+                return self.send_json({"token": API_TOKEN})
+
+            if parts[0] == "backup" and self.command == "GET":
+                archive = build_backup_archive(self.db_path)
+                return self.send_archive(
+                    archive,
+                    "job-pipeline-backup-%s.zip" % datetime.now().strftime("%Y-%m-%d"),
+                )
 
             if parts[0] == "profiles":
                 return self.profiles(parts[1:])
@@ -1556,6 +1735,10 @@ def main(argv=None):
 
     init_db(args.db)
     Handler.db_path = args.db
+    if host_name(args.host) not in LOOPBACK_HOSTS:
+        # Serving beyond loopback is explicit, so accept that host name too.
+        Handler.allowed_hosts = frozenset({host_name(args.host)})
+    backup_database(args.db)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = "http://%s:%d" % (args.host, args.port)
     print("Job application tracker running at %s" % url)

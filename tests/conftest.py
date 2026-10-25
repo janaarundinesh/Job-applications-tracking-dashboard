@@ -32,15 +32,29 @@ class Response:
 
 
 class ApiClient:
+    """A browser-shaped client: same-origin writes plus the session token."""
+
     def __init__(self, base_url, tmp_path):
         self.base_url = base_url
         self.tmp_path = tmp_path
+        self.token = ""
+        self.token = self.session_token()
 
-    def request(self, method, path, payload=None, headers=None):
+    def session_token(self):
+        with urllib.request.urlopen(self.base_url + "/api/session") as response:
+            return json.loads(response.read())["token"]
+
+    def request(self, method, path, payload=None, headers=None, origin=None, token=None):
         body = None
         request_headers = {"Content-Type": "application/json"}
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
+        if method.upper() not in ("GET", "HEAD"):
+            # Browsers send Origin on writes; the server only accepts its own.
+            request_headers["Origin"] = self.base_url if origin is None else origin
+        effective_token = self.token if token is None else token
+        if effective_token:
+            request_headers["X-Api-Token"] = effective_token
         if headers:
             request_headers.update(headers)
         request = urllib.request.Request(

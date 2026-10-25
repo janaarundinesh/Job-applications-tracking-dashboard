@@ -512,3 +512,93 @@ def test_locked_profile_metadata_is_still_selectable(api):
     other = api.post("/api/profiles", {"name": "Other"}).data
     assert api.delete("/api/profiles/%d" % profile["id"], headers=as_profile(other["id"])).status == 403
     assert api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "1111"}).status == 200
+
+
+def test_writes_must_come_from_the_dashboard(api):
+    created = api.create(company="Acme", role="Engineer")
+    # A page on another site cannot create, change or delete anything.
+    foreign = api.post("/api/applications", {"company": "Evil", "role": "X"}, origin="https://evil.example")
+    assert foreign.status == 403
+    assert foreign.data["error"] == "Requests must come from the dashboard itself"
+    assert api.delete("/api/applications/%d" % created["id"], origin="https://evil.example").status == 403
+    assert api.patch("/api/settings", {"daily_goal": 9}, origin="http://127.0.0.1:1").status == 403
+    # Reads from the dashboard itself still work.
+    assert api.get("/api/applications").status == 200
+
+
+def test_mutations_need_the_session_token(api):
+    assert api.post("/api/applications", {"company": "Acme", "role": "Eng"}, token="").status == 403
+    assert api.post("/api/applications", {"company": "Acme", "role": "Eng"}, token="wrong").status == 403
+    assert api.get("/api/applications", token="wrong").status == 403
+    assert api.get("/api/settings", token="").status == 403
+    # The token is readable from the dashboard's own origin and works.
+    assert api.token
+    assert api.get("/api/applications").status == 200
+
+
+def test_health_stays_reachable_for_the_start_screen(api):
+    response = api.get("/api/health", token="", headers={"Host": "evil.example"})
+    assert response.status == 200
+
+
+def test_foreign_host_is_refused(api):
+    response = api.get("/api/applications", headers={"Host": "evil.example"})
+    assert response.status == 403
+    assert "only answers on this machine" in response.data["error"]
+
+
+def test_document_downloads_need_no_token(api):
+    created = api.create()
+    uploaded = api.upload(created["id"], b"hello resume")
+    assert uploaded.status == 201
+    response = api.get(uploaded.data["url"], token="")
+    assert response.status == 200
+    assert response.body == b"hello resume"
+
+
+def test_backup_archive_holds_the_database_and_documents(api):
+    import io
+    import zipfile
+
+    created = api.create(company="Backed", role="Up")
+    api.upload(created["id"], b"resume bytes")
+    response = api.get("/api/backup")
+    assert response.status == 200
+    assert response.headers["Content-Type"] == "application/zip"
+
+    archive = zipfile.ZipFile(io.BytesIO(response.body))
+    names = archive.namelist()
+    assert "tracker.db" in names
+    assert "README.txt" in names
+    stored = [name for name in names if name.startswith("uploads/%d/" % created["id"])]
+    assert len(stored) == 1 and stored[0].endswith(".txt")
+
+
+def test_daily_backup_runs_once_and_prunes(tmp_path):
+    import sqlite3
+
+    import server
+
+    db_path = tmp_path / "tracker.db"
+    server.init_db(str(db_path))
+    created = server.create_application(
+        str(db_path), 1, server.clean_create({"company": "Backed", "role": "Up"})
+    )
+    first = server.backup_database(str(db_path))
+    second = server.backup_database(str(db_path))
+    assert first == second
+    assert len(list((tmp_path / "backups").glob("tracker-*.db"))) == 1
+
+    copy = sqlite3.connect(first)
+    try:
+        rows = copy.execute("SELECT company FROM applications").fetchall()
+    finally:
+        copy.close()
+    assert rows == [("Backed",)]
+
+    folder = tmp_path / "backups"
+    for day in range(1, 20):
+        (folder / ("tracker-2020-01-%02d.db" % day)).write_bytes(b"")
+    server.prune_backups(str(folder), keep=5)
+    assert len(list(folder.glob("tracker-*.db"))) == 5
+    assert (folder / "tracker-2020-01-19.db").exists()

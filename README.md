@@ -2,7 +2,7 @@
 
 A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, and resume / cover letter / document attachments.
 
-No accounts, no build step, no dependencies. Python 3.8+ standard library only. Data lives in SQLite on your machine.
+No accounts, no build step, no dependencies. Python 3.8+ standard library only, and the frontend is plain ES modules that the browser loads directly. Data lives in SQLite on your machine.
 
 ## Run it
 
@@ -100,15 +100,17 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 ## Using the dashboard
 
 - **Search / filters** — search company, role, location, source, description and notes; filter by stage, location type and source. The same filters apply to whichever tab you are on (stage only matters for Applied).
-- **Settings** — the gear in the header opens a menu for the current profile: **Profile** (name, headline, email, phone, location, links, and *Delete this profile…*), **Lock** (the PIN), **Goals** (daily and weekly) and **Log out**. Each option opens its own panel with a back arrow, and `Esc` returns to the menu before closing. *Save changes* stores the details and goals together; the PIN actions are buttons inside the Lock panel.
-- **Sorting** — click table headers.
+- **Settings** — the gear in the header opens a menu for the current profile: **Profile** (name, headline, email, phone, location, links, and *Delete this profile…*), **Lock** (the PIN), **Goals** (daily and weekly), **Reminders** (the daily notification), **Backup** (a zip of the database and documents) and **Log out**. Each option opens its own panel with a back arrow, and `Esc` returns to the menu before closing. *Save changes* stores the details and goals together; the PIN, reminder and backup actions are buttons inside their own panels.
+- **Sorting** — click a table header, or focus it and press `Enter`. The sorted column reports `aria-sort` to screen readers.
 - **Follow-ups** — any Applied job with a next-step date in the next 7 days appears on the Overview. Every due label — "Due tomorrow", "Due in 3d", "Overdue by 2d" — is shown in red, with overdue ones in a heavier weight and a stronger tint. The same red labels appear under the next step in the Applied table and in the detail drawer.
 - **Goals and streak** — the Overview has an **Application goals** panel with a ring for each target: daily and weekly (default 3 a day, 10 a week). Each ring shows applications sent against the target and turns green once it is met, and crossing a target while you use the app sets off a short confetti burst with a "Daily/Weekly goal complete" toast (confetti is skipped if your system asks for reduced motion; the toast still appears). Set the numbers in **Settings** — the gear in the header, or **Set goals** in the panel — and they are stored for the current profile in the database. A day counts once you have at least one application with that applied date; the week runs Monday to Sunday.
 - **Streak** — the next panel counts consecutive days with at least one application. It keeps counting from yesterday until you send something today, so a streak is only broken once a full day passes with nothing sent. The last seven days are shown as dots and the longest run ever is listed as your best. The flame is drawn in flame orange with a warm halo and flickers gently all the time, burning brighter and a little faster once a streak is alive; both animations stop when your system asks for reduced motion.
 - **Rejecting a job** — moving any application to the Rejected stage (from the table, the board, the detail drawer or the edit form) immediately asks whether to delete it. **Delete job and files** removes the application, its notes, timeline and every attached resume, cover letter and other document from the database and disk; **Cancel** keeps it in the Applied tab as rejected. Marking a posting "No longer open" from the review panel does not ask, since that is already a confirmation step.
 - **Needs review** — once an application reaches 30 days in an active stage (Applied, Screening, Interview), it is automatically flagged: a **Review** badge appears in the table and on its board card, and it is listed in the **Needs review** panel on the Overview. Open it and choose **Still open** to record the check, or **No longer open** to close it as rejected. A reviewed job becomes due again after another 30 days, so long-running processes get checked monthly. Rejected, withdrawn and offered jobs, and jobs in To apply, are never flagged.
 - **Export** — every job as JSON or CSV, including phase, description and notes.
-- Keyboard: `N` new job, `/` search, `Esc` close dialog/drawer, `Enter` opens the focused row.
+- **Reminders** — **Settings → Reminders → Turn on notifications** asks the browser for permission once. After that, at most one notification per profile per day summarises what is due ("2 follow-ups due · 1 job to review") when you open the dashboard; it never fires twice for the same day, and nothing leaves your machine. Browsers that only allow notifications from a service worker simply show nothing.
+- Keyboard: `N` new job, `/` search, `Esc` close dialog/drawer, `Enter` opens the focused row, `Tab`/`Shift+Tab` stay inside an open dialog, arrow keys move between tabs.
+- Screen readers: dialogs are labelled, the page behind an open dialog is `inert`, focus returns to the button that opened it, and toasts are announced politely.
 - Theme follows your system preference; the header toggle overrides it and remembers your choice.
 
 ## Look and feel
@@ -131,22 +133,43 @@ The backdrop drift and the goal confetti respect `prefers-reduced-motion`, and b
 ## Data and backups
 
 - Everything lives in `data/tracker.db` (SQLite, WAL mode); attachments in `data/uploads/`.
+- **Automatic snapshots** — the first time the server starts each day it copies the database to `data/backups/tracker-YYYY-MM-DD.db` (SQLite's own backup, so it is consistent even while the app is open) and keeps the newest 14 copies. A day with no backup yet is added on the next start.
+- **Download a backup** — **Settings → Backup → Download backup (.zip)** saves `tracker.db` together with every uploaded document in one zip, ready to keep somewhere else. The zip is built from a fresh snapshot, so it is safe to download while you work.
 - Trashed jobs still occupy their row and files until permanently deleted.
-- Back up by copying `data/`, or use **Export → Export as JSON**.
-- The server binds to `127.0.0.1` only — it is not reachable from other machines on your network.
+- You can also copy `data/` by hand, or use **Export → Export as JSON** for a readable copy of the jobs.
 - PINs are stored hashed, but the database file is not encrypted; the PIN lock guards the dashboard, not `data/tracker.db` on disk.
 - Unlock tokens live in the server's memory, so restarting the server locks every PIN-protected profile again.
 
+## Local-only API
+
+The address and the data are yours, so the server refuses to be driven by anything else on the machine:
+
+- **Host check** — every API call must carry a loopback `Host` header (`127.0.0.1`, `localhost`, `::1`, or the address given to `--host`). This stops a DNS-rebinding page from pretending to be the dashboard.
+- **Same-origin writes** — creating, changing and deleting require an `Origin` (or `Referer`) from the same server and port. A page on another site cannot post to your tracker.
+- **Session token** — `GET /api/session` hands out a random token for this run of the server. Every API call except the health probe and document downloads must send it as `X-Api-Token`; only the dashboard's own origin can read the response. Reloading picks up a fresh token automatically.
+- `GET /api/health` stays open so the start screen can check whether the server is running.
+
+If you script the API, fetch the token first and send it with your requests (see the example below).
+
 ## Tests
 
-The API suite runs the real HTTP server against a throwaway SQLite database in a temp directory, so it never touches `data/`.
+Two suites run against the real HTTP server with a throwaway SQLite database in a temp directory, so neither touches `data/`.
 
 ```bash
-python3 -m pip install pytest
-python3 -m pytest -q
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest -q                    # API suite
+RUN_E2E=1 python3 -m pytest tests/e2e   # browser suite (needs Playwright)
 ```
 
-It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, and profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, and the PIN lock (hashing, wrong PINs, unlock tokens, locking again, and refusing locked data without a token). GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
+The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
+
+The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, and unlocks a PIN-protected profile.
+
+```bash
+python3 -m playwright install chromium   # once, after installing requirements-dev
+```
+
+The browser suite is skipped unless `RUN_E2E=1`, so the pre-commit hook stays fast. GitHub Actions runs the API suite and, in a second job, the browser suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
 ### Pre-commit hook
 
@@ -172,12 +195,17 @@ Start Job Pipeline.command  macOS double-click launcher (starts the server, open
 Start Job Pipeline.bat      Windows double-click launcher (same thing)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
-public/          Dashboard UI (HTML, CSS, vanilla JS — no build step)
+public/          Dashboard UI: index.html, styles.css and js/ ES modules (no build step)
+  public/js/     main.js (events and boot), core.js (state, dates, API client), data.js
+                 (loading and mutations), overview.js, workspace.js, drawer.js, dialogs.js,
+                 profiles.js (picker, PIN, settings), io.js (import/export), a11y.js (dialog
+                 focus), reminders.js (daily notification)
 tests/           pytest suite exercising the API end to end
+  tests/e2e/     Playwright suite driving the dashboard in Chromium
+data/            Created on first run: tracker.db, uploads/ and backups/
 .githooks/       pre-commit hook that runs the suite
-.github/         CI workflow that runs the tests
-requirements-dev.txt  pytest, only needed for running the tests
-data/            Created on first run: tracker.db + uploads/
+.github/         CI workflows that run both suites
+requirements-dev.txt  pytest and Playwright, only needed for running the tests
 ```
 
 ## API (if you want to script it)
@@ -211,15 +239,22 @@ POST   /api/profiles/<id>/unlock               { "pin": "1234" } → { "token": 
 POST   /api/profiles/<id>/lock                 revoke every unlock token for the profile
 POST   /api/import                            { "applications": [ … ] }
 POST   /api/extract                           { "url": "https://…" }
-GET    /api/health
+GET    /api/session                           { "token": "…" } for this run of the server
+GET    /api/backup                            a zip of the database and every document
+GET    /api/health                            open, no token needed
 ```
 
-Every endpoint except `GET /api/profiles` and `/api/health` works on one profile. Send `X-Profile-Id: <id>` to pick it; without the header the first profile is used, which is what the dashboard does before it has loaded the profile list. For a PIN-protected profile also send `X-Profile-Token` with the token from `/unlock`, otherwise the data endpoints answer `423`.
+Every endpoint except `GET /api/profiles`, `/api/session`, `/api/backup` and `/api/health` works on one profile. Send `X-Profile-Id: <id>` to pick it; without the header the first profile is used, which is what the dashboard does before it has loaded the profile list. For a PIN-protected profile also send `X-Profile-Token` with the token from `/unlock`, otherwise the data endpoints answer `423`.
 
-Example:
+Send `X-Api-Token` from `/api/session` on every call, and an `Origin` matching the server on writes (see [Local-only API](#local-only-api)):
 
 ```bash
-curl -X POST http://127.0.0.1:8787/api/applications \
+BASE=http://127.0.0.1:8787
+TOKEN=$(curl -s $BASE/api/session | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
+curl -X POST $BASE/api/applications \
+  -H "X-Api-Token: $TOKEN" \
+  -H "Origin: $BASE" \
   -H 'Content-Type: application/json' \
   -d '{"company":"Acme","role":"Frontend Engineer","phase":"applied","status":"applied"}'
 ```

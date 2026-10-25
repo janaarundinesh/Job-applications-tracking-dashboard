@@ -1,0 +1,289 @@
+/* Job Pipeline — Add/edit job dialog, link extraction, confirmations.
+   ES module, no build step. Open the dashboard through server.py. */
+
+import { $, $$, api, state, statusSelectOptions, toast, todayISO } from "./core.js";
+import { promptRejectDelete, updateLocal } from "./data.js";
+import { closeDrawer, openDrawer } from "./drawer.js";
+import { setPanelNote } from "./io.js";
+import { render, setTab, syncDatalists } from "./workspace.js";
+
+
+export function setModalMode(mode) {
+  state.modalMode = mode;
+  const isEditing = Boolean(state.editingId);
+  const effective = isEditing ? "manual" : mode;
+  $$(".mode-btn").forEach((button) => {
+    const active = button.dataset.mode === effective;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $("#panel-link").hidden = effective !== "link";
+  $("#panel-file").hidden = effective !== "file";
+  $("#app-form").hidden = effective !== "manual";
+  $("#modal-foot").hidden = effective === "file";
+  $("#modal-modes").hidden = isEditing;
+  $("#modal-sub").hidden = isEditing;
+  $("#modal-save").hidden = effective === "link";
+  $("#modal-cancel").hidden = effective === "file";
+}
+
+
+export function syncPhaseFields() {
+  const phase = $("#form-phase").value;
+  $$(".phase-applied-only").forEach((field) => {
+    field.hidden = phase === "to_apply";
+  });
+}
+
+
+export function openModal(app) {
+  state.editingId = app ? app.id : null;
+  const form = $("#app-form");
+  form.reset();
+  const error = $("#form-error");
+  error.hidden = true;
+  error.textContent = "";
+  error.classList.remove("is-warning");
+  $$(".field.has-error").forEach((field) => field.classList.remove("has-error"));
+  $("#form-status").innerHTML = statusSelectOptions(app ? app.status : "applied", false);
+  $("#modal-title").textContent = app ? "Edit job" : "Add job";
+  $("#modal-save").textContent = app ? "Save changes" : "Add job";
+
+  const values = app || {
+    status: "applied",
+    work_mode: "onsite",
+    applied_on: todayISO(),
+    phase: state.tab === "to_apply" ? "to_apply" : "applied",
+  };
+  Object.keys(values).forEach((key) => {
+    const field = form.elements.namedItem(key);
+    if (field && values[key] != null) field.value = values[key];
+  });
+  if (!app) {
+    form.elements.namedItem("applied_on").value = todayISO();
+    form.elements.namedItem("work_mode").value = "onsite";
+  }
+  if (!form.elements.namedItem("phase").value) form.elements.namedItem("phase").value = "applied";
+  $("#extract-url").value = "";
+  $("#extract-status").hidden = true;
+  $("#import-status").hidden = true;
+  $("#modal-import-file").value = "";
+  syncDatalists();
+  syncPhaseFields();
+  setModalMode("manual");
+  $("#modal-backdrop").hidden = false;
+  $("#modal-content").scrollTop = 0;
+  document.body.classList.add("no-scroll");
+  if (!app) window.setTimeout(() => form.elements.namedItem("company").focus(), 30);
+}
+
+
+export function closeModal() {
+  $("#modal-backdrop").hidden = true;
+  state.editingId = null;
+  document.body.classList.remove("no-scroll");
+}
+
+
+export async function submitForm(event) {
+  event.preventDefault();
+  const form = $("#app-form");
+  const data = {};
+  Array.from(form.elements).forEach((field) => {
+    if (!field.name) return;
+    data[field.name] = field.value.trim();
+  });
+  const error = $("#form-error");
+  const companyField = form.elements.namedItem("company").closest(".field");
+  const roleField = form.elements.namedItem("role").closest(".field");
+  companyField.classList.toggle("has-error", !data.company);
+  roleField.classList.toggle("has-error", !data.role);
+  if (!data.company || !data.role) {
+    error.textContent = "Company and role are required.";
+    error.classList.remove("is-warning");
+    error.hidden = false;
+    return;
+  }
+  if (data.applied_on === "") delete data.applied_on;
+  if (data.next_step_on === "") data.next_step_on = null;
+  error.hidden = true;
+  const saveButton = $("#modal-save");
+  saveButton.disabled = true;
+  try {
+    let saved;
+    const previous = state.editingId
+      ? state.apps.find((item) => item.id === state.editingId) || null
+      : null;
+    if (state.editingId) {
+      saved = await api("/api/applications/" + state.editingId, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+      toast("Job updated");
+    } else {
+      saved = await api("/api/applications", { method: "POST", body: JSON.stringify(data) });
+      toast(saved.phase === "to_apply" ? "Job saved to apply" : "Application added");
+    }
+    updateLocal(saved);
+    closeModal();
+    if (state.drawerId === saved.id) openDrawer(saved.id);
+    if (state.tab === "overview" || state.tab === "trash") {
+      setTab(saved.phase === "to_apply" ? "to_apply" : "applied");
+    }
+    promptRejectDelete(saved, previous);
+  } catch (submitError) {
+    error.textContent = submitError.message;
+    error.classList.remove("is-warning");
+    error.hidden = false;
+  } finally {
+    saveButton.disabled = false;
+  }
+}
+
+
+export async function extractFromLink() {
+  const input = $("#extract-url");
+  const url = input.value.trim();
+  if (!url) {
+    setPanelNote("#extract-status", "Paste a job posting link first.", "error");
+    input.focus();
+    return;
+  }
+  const button = $("#extract-btn");
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Reading…";
+  setPanelNote("#extract-status", "Fetching the posting…", "ok");
+  try {
+    const result = await api("/api/extract", { method: "POST", body: JSON.stringify({ url: url }) });
+    const form = $("#app-form");
+    const fields = result.fields || {};
+    Object.keys(fields).forEach((key) => {
+      const field = form.elements.namedItem(key);
+      if (!field) return;
+      const value = fields[key];
+      if (value == null || value === "") return;
+      if (typeof field.value === "string" && field.value.trim()) return;
+      field.value = value;
+    });
+    const appliedField = form.elements.namedItem("applied_on");
+    if (!appliedField.value) appliedField.value = todayISO();
+    const warnings = result.warnings || [];
+    setModalMode("manual");
+    $("#modal-content").scrollTop = 0;
+    if (warnings.length) {
+      const box = $("#form-error");
+      box.textContent = warnings.join(" ");
+      box.classList.add("is-warning");
+      box.hidden = false;
+    }
+    toast(warnings.length ? "Details filled — review the fields" : "Details filled from the posting");
+  } catch (error) {
+    setPanelNote("#extract-status", error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+
+export function confirmAction(config) {
+  const template = $("#confirm-template");
+  const fragment = template.content.cloneNode(true);
+  const backdrop = fragment.querySelector(".confirm-backdrop");
+  const okButton = fragment.querySelector(".confirm-ok");
+  fragment.querySelector(".confirm-title").textContent = config.title;
+  fragment.querySelector(".confirm-text").textContent = config.text;
+  okButton.textContent = config.okLabel || "Confirm";
+  okButton.classList.toggle("btn-danger", config.danger !== false);
+  let busy = false;
+  const cleanup = () => {
+    backdrop.remove();
+    // Another dialog may still be open behind this one.
+    if (
+      $("#profiles-backdrop").hidden &&
+      $("#settings-backdrop").hidden &&
+      $("#modal-backdrop").hidden
+    ) {
+      document.body.classList.remove("no-scroll");
+    }
+  };
+  fragment.querySelector(".confirm-cancel").addEventListener("click", cleanup);
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) cleanup();
+  });
+  okButton.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    okButton.disabled = true;
+    try {
+      await config.onConfirm();
+      cleanup();
+    } catch (error) {
+      busy = false;
+      okButton.disabled = false;
+      toast(error.message || "Something went wrong", true);
+    }
+  });
+  document.body.appendChild(fragment);
+  document.body.classList.add("no-scroll");
+  okButton.focus();
+}
+
+
+export function confirmTrash(app) {
+  confirmAction({
+    title: "Move to trash?",
+    text:
+      app.company + " — " + app.role +
+      " will move to the trash. You can restore it from the Trash tab; nothing is deleted permanently yet.",
+    okLabel: "Move to trash",
+    onConfirm: async () => {
+      const result = await api("/api/applications/" + app.id, { method: "DELETE" });
+      const trashed = result && result.application ? result.application : app;
+      state.apps = state.apps.filter((item) => item.id !== app.id);
+      state.trash = [trashed].concat(state.trash.filter((item) => item.id !== app.id));
+      render();
+      if (state.drawerId === app.id) closeDrawer();
+      toast("Moved to trash");
+    },
+  });
+}
+
+
+export function confirmEmptyTrash() {
+  if (!state.trash.length) return;
+  const count = state.trash.length;
+  confirmAction({
+    title: "Empty the trash?",
+    text:
+      count + " deleted job" + (count === 1 ? "" : "s") +
+      " and all of their attached documents (resume, cover letter, files) will be removed from the database and disk." +
+      " This cannot be undone.",
+    okLabel: "Empty trash",
+    onConfirm: async () => {
+      const result = await api("/api/trash", { method: "DELETE" });
+      state.trash = [];
+      render();
+      const removed = result && result.deleted ? result.deleted : count;
+      toast("Trash emptied — " + removed + " job" + (removed === 1 ? "" : "s") + " deleted");
+    },
+  });
+}
+
+
+export function confirmPurge(app) {
+  confirmAction({
+    title: "Delete permanently?",
+    text:
+      app.company + " — " + app.role +
+      ", its notes, timeline and all attached documents (resume, cover letter, files) will be removed from the database and disk. This cannot be undone.",
+    okLabel: "Delete forever",
+    onConfirm: async () => {
+      await api("/api/applications/" + app.id + "?permanent=1", { method: "DELETE" });
+      state.trash = state.trash.filter((item) => item.id !== app.id);
+      render();
+      toast("Permanently deleted");
+    },
+  });
+}

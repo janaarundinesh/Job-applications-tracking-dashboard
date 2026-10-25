@@ -12,6 +12,7 @@
 </script>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to dashboard</a>
 <div class="ambient" aria-hidden="true"></div>
 
 <div class="file-guard" id="file-guard">
@@ -127,7 +128,7 @@
   </div>
 </header>
 
-<main class="page">
+<main class="page" id="main">
   <!-- ============ Overview tab ============ -->
   <section class="panel-view" id="panel-overview" role="tabpanel" aria-label="Overview">
     <div class="section-head">
@@ -608,6 +609,30 @@
           </button>
         </li>
         <li>
+          <button type="button" class="settings-row" data-settings-view="reminders">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8a6 6 0 10-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a2 2 0 003 0"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Reminders</span>
+              <span class="settings-row-meta" id="settings-menu-reminders">Off — no notifications</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="settings-row" data-settings-view="backup">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">Backup</span>
+              <span class="settings-row-meta" id="settings-menu-backup">Daily snapshot · last 14 days</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
           <button type="button" class="settings-row is-danger" data-settings-action="logout">
             <span class="settings-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/></svg>
@@ -672,6 +697,31 @@
           </label>
         </div>
         <p class="mode-hint">A day counts once at least one application has been sent that day. Weeks run Monday to Sunday and the Overview shows your progress.</p>
+      </section>
+      <section class="settings-block" data-settings-panel="reminders" hidden>
+        <h3 class="settings-heading">Reminders</h3>
+        <p class="settings-pin-status" id="settings-reminders-status">Off — no notifications.</p>
+        <div class="settings-pin-actions">
+          <button type="button" class="btn" id="settings-reminders-on">Turn on notifications</button>
+          <button type="button" class="btn btn-ghost" id="settings-reminders-off" hidden>Turn off</button>
+        </div>
+        <p class="form-error" id="settings-reminders-error" hidden></p>
+        <p class="mode-hint">
+          Once a day, while the dashboard is open, a notification lists the follow-ups due in the next
+          week and the jobs that are worth checking after 30 days. Nothing leaves this machine, and the
+          browser asks for permission the first time.
+        </p>
+      </section>
+      <section class="settings-block" data-settings-panel="backup" hidden>
+        <h3 class="settings-heading">Backup</h3>
+        <p class="mode-hint">
+          The tracker copies its database into <code>data/backups</code> the first time the server starts
+          each day and keeps the newest 14 copies. Download a zip if you want a copy somewhere else.
+        </p>
+        <div class="settings-pin-actions">
+          <button type="button" class="btn btn-primary" id="settings-backup-download">Download backup (.zip)</button>
+        </div>
+        <p class="settings-pin-status" id="settings-backup-note">Contains the database and every uploaded document.</p>
       </section>
       <section class="settings-block" data-settings-panel="lock" hidden>
         <h3 class="settings-heading">PIN lock</h3>
@@ -745,6 +795,49 @@
   </div>
 </template>
 
-<script src="app.js"></script>
+<script>
+  // The app itself is an ES module tree, which browsers only run over http. When
+  // index.html is opened from disk, keep this start screen and offer a retry.
+  (function () {
+    if (window.location.protocol !== "file:") {
+      var module = document.createElement("script");
+      module.type = "module";
+      module.src = "js/main.js";
+      document.body.appendChild(module);
+      return;
+    }
+
+    var status = document.getElementById("file-guard-status");
+    var retry = document.getElementById("file-guard-retry");
+    if (!status) return;
+    var checking = false;
+
+    function check() {
+      if (checking) return;
+      checking = true;
+      if (retry) retry.disabled = true;
+      status.classList.remove("is-found", "is-error");
+      status.textContent = "Checking whether the server is running…";
+      fetch("http://127.0.0.1:8787/api/health", { mode: "no-cors", cache: "no-store" })
+        .then(function () {
+          status.textContent = "Server found — opening the dashboard…";
+          status.classList.add("is-found");
+          window.location.replace("http://127.0.0.1:8787");
+        })
+        .catch(function () {
+          status.textContent =
+            "The server did not answer. Start it with the command above, then check again.";
+          status.classList.add("is-error");
+        })
+        .then(function () {
+          checking = false;
+          if (retry) retry.disabled = false;
+        });
+    }
+
+    if (retry) retry.addEventListener("click", check);
+    check();
+  })();
+</script>
 </body>
 </html>
