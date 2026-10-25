@@ -6,7 +6,7 @@ No accounts, no build step, no dependencies. Python 3.8+ standard library only. 
 
 ## Run it
 
-On macOS, double-click **Start Job Pipeline.command** in the project folder. It starts the server in a Terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that Terminal window open while you work; closing it or pressing `Ctrl+C` stops the server.
+Double-click the launcher for your platform in the project folder: **Start Job Pipeline.command** on macOS, **Start Job Pipeline.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server.
 
 From a terminal instead:
 
@@ -145,6 +145,7 @@ If the interpreter it finds has no pytest, the hook says so and lets the commit 
 
 ```
 Start Job Pipeline.command  macOS double-click launcher (starts the server, opens the dashboard)
+Start Job Pipeline.bat      Windows double-click launcher (same thing)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI (HTML, CSS, vanilla JS — no build step)
