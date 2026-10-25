@@ -27,6 +27,7 @@ Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
 - **Overview** — total applications, active, interviews, offers, response rate, saved jobs, the stage funnel, applications per week (last 8 weeks) and follow-ups due in the next 7 days.
 - **Applied** — everything you have actually sent. Table view (search, filter, sort, inline stage changes) and board view (drag cards between Applied → Screening → Interview → Offer, plus Rejected/Withdrawn).
 - **To apply** — jobs you have saved but not sent yet. Also a table, with a one-click **Mark as applied** action on every row (or in the detail drawer). Saved jobs are excluded from pipeline stats, follow-up reminders and the board until you send them.
+- **Bulk actions** — tick the checkbox on several saved jobs (or the header checkbox to select everything currently shown) and a bar appears with **Mark as applied**, **Delete** and **Clear**. Marking several as applied sends them to the Applied tab with today's date; Delete asks once, then moves them all to Trash, where they can still be restored. The selection clears when you change tabs.
 - **Trash** — deleted jobs wait here. Restore one, or delete it permanently when you are sure.
 
 Click any row or card to open the detail drawer: stage, dates, salary, source, contact, job description, documents, personal notes, and the full stage timeline.

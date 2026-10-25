@@ -198,11 +198,19 @@
       <div class="empty" id="applied-empty" hidden></div>
     </div>
 
+    <div class="bulk-bar" id="bulk-bar" hidden>
+      <span class="bulk-count" id="bulk-count"></span>
+      <button type="button" class="btn btn-primary" id="bulk-apply">Mark as applied</button>
+      <button type="button" class="btn btn-danger" id="bulk-delete">Delete</button>
+      <button type="button" class="btn btn-ghost" id="bulk-clear">Clear</button>
+    </div>
+
     <!-- to apply: table -->
     <div class="table-shell" id="toapply-table-shell" hidden>
       <table class="apps-table">
         <thead>
           <tr>
+            <th class="select-col"><input type="checkbox" id="select-all-toapply" aria-label="Select all saved jobs" /></th>
             <th class="sortable" data-sort="company">Company</th>
             <th class="sortable" data-sort="role">Role</th>
             <th class="sortable" data-sort="created_at">Saved</th>

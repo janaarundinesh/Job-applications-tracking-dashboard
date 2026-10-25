@@ -53,6 +53,7 @@
     drawerEvents: [],
     drawerDocuments: [],
     editingId: null,
+    selection: new Set(),
     previewDoc: null,
     goalProgress: null,
     settings: Object.assign({}, DEFAULT_GOALS),
@@ -446,6 +447,7 @@
 
   function setTab(tab) {
     state.tab = TABS.includes(tab) ? tab : "overview";
+    if (state.tab !== "to_apply") state.selection.clear();
     render();
   }
 
@@ -770,6 +772,7 @@
     $("#view-switch").hidden = isToApply || isTrash;
     $("#filter-status").hidden = isToApply || isTrash;
 
+    $("#bulk-bar").hidden = true;
     const appliedShell = $("#applied-table-shell");
     const toApplyShell = $("#toapply-table-shell");
     const trashShell = $("#trash-table-shell");
@@ -829,7 +832,12 @@
       appliedShell.hidden = true;
       toApplyShell.hidden = false;
       board.hidden = true;
+      const visibleIds = new Set(list.map((app) => app.id));
+      Array.from(state.selection).forEach((id) => {
+        if (!visibleIds.has(id)) state.selection.delete(id);
+      });
       toApplyBody.innerHTML = list.map(toApplyRow).join("");
+      updateBulkBar(list);
       const showEmpty = list.length === 0;
       toApplyEmpty.hidden = !showEmpty;
       if (showEmpty) {
@@ -939,7 +947,11 @@
     const meta = [app.location, MODE_LABEL[app.work_mode] || ""].filter(Boolean).join(" · ");
     const nextStep = app.next_step || (app.next_step_on ? "Follow up" : "");
     return (
-      '<tr data-app-id="' + app.id + '" tabindex="0">' +
+      '<tr data-app-id="' + app.id + '" tabindex="0"' +
+      (state.selection.has(app.id) ? ' class="is-selected"' : "") + ">" +
+      '<td class="select-col"><input type="checkbox" data-select-id="' + app.id + '"' +
+      (state.selection.has(app.id) ? " checked" : "") +
+      ' aria-label="Select ' + esc(app.company) + " " + esc(app.role) + '" /></td>' +
       '<td class="company-cell">' +
       '<div class="company-name">' + esc(app.company) + "</div>" +
       (meta ? '<div class="company-meta">' + esc(meta) + "</div>" : "") +
@@ -1592,6 +1604,91 @@
     } finally {
       button.disabled = false;
     }
+  }
+
+  function updateBulkBar(list) {
+    const bar = $("#bulk-bar");
+    const count = state.selection.size;
+    bar.hidden = state.tab !== "to_apply" || count === 0;
+    if (!bar.hidden) $("#bulk-count").textContent = count + " selected";
+    const all = $("#select-all-toapply");
+    if (!all) return;
+    const visible = list.map((app) => app.id);
+    const chosen = visible.filter((id) => state.selection.has(id)).length;
+    all.disabled = visible.length === 0;
+    all.checked = visible.length > 0 && chosen === visible.length;
+    all.indeterminate = chosen > 0 && chosen < visible.length;
+  }
+
+  async function bulkMarkApplied() {
+    const ids = Array.from(state.selection);
+    if (!ids.length) return;
+    const button = $("#bulk-apply");
+    button.disabled = true;
+    let done = 0;
+    let failed = 0;
+    for (const id of ids) {
+      const app = state.apps.find((item) => item.id === id);
+      if (!app) {
+        failed += 1;
+        continue;
+      }
+      const payload = { phase: "applied", status: "applied" };
+      if (!app.applied_on || Number.isNaN(Date.parse(app.applied_on))) payload.applied_on = todayISO();
+      try {
+        const updated = await api("/api/applications/" + id, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        const index = state.apps.findIndex((item) => item.id === id);
+        if (index === -1) state.apps.push(updated);
+        else state.apps[index] = updated;
+        done += 1;
+      } catch (error) {
+        failed += 1;
+      }
+    }
+    state.selection.clear();
+    button.disabled = false;
+    render();
+    toast(
+      done + " job" + (done === 1 ? "" : "s") + " marked as applied" +
+        (failed ? " — " + failed + " failed" : "")
+    );
+  }
+
+  function bulkDelete() {
+    const ids = Array.from(state.selection);
+    if (!ids.length) return;
+    const count = ids.length;
+    confirmAction({
+      title: "Move " + count + " job" + (count === 1 ? "" : "s") + " to trash?",
+      text:
+        "They move to the Trash tab with their notes, timeline and documents intact." +
+        " You can restore them from there; nothing is deleted permanently yet.",
+      okLabel: "Move to trash",
+      onConfirm: async () => {
+        let done = 0;
+        let failed = 0;
+        for (const id of ids) {
+          try {
+            const result = await api("/api/applications/" + id, { method: "DELETE" });
+            const trashed = result && result.application ? result.application : null;
+            state.apps = state.apps.filter((item) => item.id !== id);
+            if (trashed) state.trash = [trashed].concat(state.trash.filter((item) => item.id !== id));
+            done += 1;
+          } catch (error) {
+            failed += 1;
+          }
+        }
+        state.selection.clear();
+        render();
+        toast(
+          done + " job" + (done === 1 ? "" : "s") + " moved to trash" +
+            (failed ? " — " + failed + " failed" : "")
+        );
+      },
+    });
   }
 
   function markApplied(id) {
@@ -2464,6 +2561,29 @@
     $("#applied-table-body").addEventListener("change", (event) => {
       const select = event.target.closest("[data-inline-status]");
       if (select) patchStatus(Number(select.dataset.inlineStatus), select.value);
+    });
+
+    $("#toapply-table-body").addEventListener("change", (event) => {
+      const box = event.target.closest("[data-select-id]");
+      if (!box) return;
+      const id = Number(box.dataset.selectId);
+      if (box.checked) state.selection.add(id);
+      else state.selection.delete(id);
+      renderWorkspace();
+    });
+
+    $("#select-all-toapply").addEventListener("change", (event) => {
+      const ids = visibleApps("to_apply").map((app) => app.id);
+      if (event.target.checked) ids.forEach((id) => state.selection.add(id));
+      else ids.forEach((id) => state.selection.delete(id));
+      renderWorkspace();
+    });
+
+    $("#bulk-apply").addEventListener("click", bulkMarkApplied);
+    $("#bulk-delete").addEventListener("click", bulkDelete);
+    $("#bulk-clear").addEventListener("click", () => {
+      state.selection.clear();
+      renderWorkspace();
     });
 
     $("#applied-table-body").addEventListener("keydown", (event) => {
