@@ -30,6 +30,8 @@
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 19V9M12 19V5M19 19v-6"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.4"/><path d="M8.5 10V7.5a3.5 3.5 0 017 0V10"/></svg>',
+    unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.4"/><path d="M8.5 10V7.5a3.5 3.5 0 016.4-2"/></svg>',
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
     bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4h12v17l-6-4.5L6 21V4z"/></svg>',
     restore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10a8 8 0 111.6 7.5"/><path d="M4 4v6h6"/></svg>',
@@ -59,6 +61,8 @@
     settings: Object.assign({}, DEFAULT_GOALS),
     profiles: [],
     profileId: null,
+    unlockId: null,
+    gate: false,
     loading: true,
   };
 
@@ -273,12 +277,44 @@
     return error instanceof TypeError || /load failed|failed to fetch|network ?error/i.test((error && error.message) || "");
   }
 
+  /* Unlock tokens are per profile and kept for this browser tab only. */
+  const TOKEN_KEY = "jobpipe:tokens";
+
+  function readTokens() {
+    try {
+      return JSON.parse(sessionStorage.getItem(TOKEN_KEY)) || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function tokenFor(profileId) {
+    return readTokens()[String(profileId)] || "";
+  }
+
+  function setToken(profileId, token) {
+    const tokens = readTokens();
+    if (token) tokens[String(profileId)] = token;
+    else delete tokens[String(profileId)];
+    try {
+      sessionStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+    } catch (error) {
+      /* private mode with storage disabled: the profile just asks again */
+    }
+  }
+
+  function clearToken(profileId) {
+    setToken(profileId, "");
+  }
+
   async function api(path, options) {
     const init = Object.assign({ headers: { "Content-Type": "application/json" } }, options);
     init.headers = Object.assign({}, init.headers);
-    // Profile endpoints manage every profile, so they never carry a selection.
-    if (state.profileId && !path.startsWith("/api/profiles")) {
+    // Listing profiles is not scoped to one of them; everything else is.
+    if (state.profileId && path !== "/api/profiles") {
       init.headers["X-Profile-Id"] = String(state.profileId);
+      const token = tokenFor(state.profileId);
+      if (token) init.headers["X-Profile-Token"] = token;
     }
     let response;
     try {
@@ -311,12 +347,34 @@
     }
     if (!response.ok) {
       const message = payload && payload.error ? payload.error : "Request failed (" + response.status + ")";
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      // The profile locked while this tab was open (or its token expired).
+      if (response.status === 423 && state.profileId && path !== "/api/profiles") {
+        clearToken(state.profileId);
+        openUnlock(state.profileId);
+      }
+      throw error;
     }
     return payload;
   }
 
+  function profileNeedsUnlock() {
+    const profile = activeProfile();
+    return !!(profile && profile.locked && !tokenFor(profile.id));
+  }
+
   async function loadApps() {
+    if (profileNeedsUnlock()) {
+      // Nothing is fetched for a locked profile: the server would refuse it.
+      state.apps = [];
+      state.trash = [];
+      state.settings = Object.assign({}, DEFAULT_GOALS);
+      state.loading = false;
+      render();
+      openUnlock(state.profileId);
+      return;
+    }
     state.loading = true;
     render();
     try {
@@ -1611,6 +1669,16 @@
     else localStorage.removeItem("jobpipe:profile");
   }
 
+  /* Which profile this tab is inside, so a reload skips the picker. */
+  function rememberSession(profileId) {
+    try {
+      if (profileId) sessionStorage.setItem("jobpipe:session", String(profileId));
+      else sessionStorage.removeItem("jobpipe:session");
+    } catch (error) {
+      /* storage disabled: the picker simply shows again on the next load */
+    }
+  }
+
   function renderProfileChrome() {
     const button = $("#profile-btn");
     if (!button) return;
@@ -1640,7 +1708,10 @@
       .map((profile) => {
         const active = profile.id === state.profileId;
         const jobs = profile.jobs || 0;
-        const detail = profile.headline || profile.email || "No contact details yet";
+        const open = profile.locked && !!tokenFor(profile.id);
+        const detail = profile.locked
+          ? "PIN protected"
+          : profile.headline || profile.email || "No contact details yet";
         const meta =
           detail + " · " + (jobs ? jobs + " job" + (jobs === 1 ? "" : "s") : "no jobs yet");
         return (
@@ -1649,14 +1720,14 @@
           '<button type="button" class="profile-row-main" data-select-profile="' + profile.id + '">' +
           '<span class="profile-row-name">' + esc(profile.name) +
           (active ? '<span class="profile-tag">Current</span>' : "") +
+          (profile.locked ? '<span class="profile-lock" title="PIN protected">' + ICON.lock + "</span>" : "") +
           "</span>" +
           '<span class="profile-row-meta">' + esc(meta) + "</span>" +
           "</button>" +
           '<span class="profile-row-actions">' +
-          (state.profiles.length > 1
-            ? '<button type="button" class="btn btn-icon" data-delete-profile="' + profile.id +
-              '" title="Delete ' + esc(profile.name) + '" aria-label="Delete ' + esc(profile.name) + '">' +
-              ICON.trash + "</button>"
+          (open
+            ? '<button type="button" class="btn btn-icon" data-lock-profile="' + profile.id +
+              '" title="Lock now" aria-label="Lock ' + esc(profile.name) + ' now">' + ICON.unlock + "</button>"
             : "") +
           "</span>" +
           "</li>"
@@ -1666,29 +1737,32 @@
   }
 
   function openProfiles() {
-    const error = $("#profiles-error");
-    error.hidden = true;
-    error.textContent = "";
-    $("#profile-create-name").value = "";
     renderProfilesList();
     $("#profiles-backdrop").hidden = false;
     document.body.classList.add("no-scroll");
-    window.setTimeout(() => $("#profile-create-name").focus(), 30);
   }
 
   function closeProfiles() {
     $("#profiles-backdrop").hidden = true;
+    if (!$("#newprofile-backdrop").hidden || !$("#settings-backdrop").hidden) return;
     document.body.classList.remove("no-scroll");
   }
 
   function selectProfile(id) {
     if (!id) return;
+    const picked = state.profiles.find((profile) => profile.id === id);
+    if (picked && picked.locked && !tokenFor(id)) {
+      closeProfiles();
+      openUnlock(id);
+      return;
+    }
     if (id === state.profileId) {
       closeProfiles();
       return;
     }
     state.profileId = id;
     persistProfile();
+    rememberSession(id);
     state.selection.clear();
     if (state.drawerId) closeDrawer();
     closeProfiles();
@@ -1699,18 +1773,35 @@
     if (profile) toast("Switched to " + profile.name);
   }
 
-  async function createProfile(event) {
+  function openNewProfile() {
+    const input = $("#newprofile-name");
+    input.value = "";
+    const error = $("#newprofile-error");
+    error.hidden = true;
+    error.textContent = "";
+    $("#newprofile-backdrop").hidden = false;
+    document.body.classList.add("no-scroll");
+    window.setTimeout(() => input.focus(), 40);
+  }
+
+  function closeNewProfile() {
+    $("#newprofile-backdrop").hidden = true;
+    if (!$("#profiles-backdrop").hidden || !$("#settings-backdrop").hidden) return;
+    document.body.classList.remove("no-scroll");
+  }
+
+  async function createNewProfile(event) {
     event.preventDefault();
-    const input = $("#profile-create-name");
+    const input = $("#newprofile-name");
     const name = input.value.trim();
-    const box = $("#profiles-error");
+    const box = $("#newprofile-error");
     if (!name) {
       box.hidden = false;
       box.textContent = "Give the new profile a name.";
       input.focus();
       return;
     }
-    const button = $("#profile-create-btn");
+    const button = $("#newprofile-create");
     button.disabled = true;
     try {
       const profile = await api("/api/profiles", {
@@ -1718,10 +1809,10 @@
         body: JSON.stringify({ name: name }),
       });
       state.profiles.push(Object.assign({ jobs: 0, total_jobs: 0 }, profile));
-      input.value = "";
-      box.hidden = true;
+      closeNewProfile();
+      renderWelcome();
       renderProfilesList();
-      toast("Profile added — select it to start using it");
+      toast("Profile created — select it to start");
     } catch (error) {
       box.hidden = false;
       box.textContent = error.message;
@@ -1730,39 +1821,318 @@
     }
   }
 
-  function deleteProfile(profile) {
+  /* Deletion only exists inside the profile itself (Settings → Profile). */
+  function deleteCurrentProfile() {
+    const profile = activeProfile();
     if (!profile) return;
     if (state.profiles.length <= 1) {
       toast("Keep at least one profile", true);
       return;
     }
-    const jobs = profile.total_jobs || 0;
+    const jobs = profile.total_jobs != null ? profile.total_jobs : profile.jobs || 0;
     confirmAction({
       title: "Delete " + profile.name + "?",
       text:
-        "The profile is removed with " + jobs + " job" + (jobs === 1 ? "" : "s") +
-        ", every attached document and its goals. This cannot be undone." +
-        (profile.id === state.profileId ? " You will continue on another profile." : ""),
+        "This profile is removed with " + jobs + " job" + (jobs === 1 ? "" : "s") +
+        ", every attached document and its goals. This cannot be undone.",
       okLabel: "Delete profile",
       onConfirm: async () => {
         await api("/api/profiles/" + profile.id, { method: "DELETE" });
-        const wasActive = profile.id === state.profileId;
         state.profiles = state.profiles.filter((item) => item.id !== profile.id);
+        state.profileId = state.profiles.length ? state.profiles[0].id : null;
+        persistProfile();
+        rememberSession(null);
+        clearToken(profile.id);
+        state.apps = [];
+        state.trash = [];
+        state.settings = Object.assign({}, DEFAULT_GOALS);
+        state.selection.clear();
+        closeSettings();
         renderProfilesList();
-        if (wasActive) {
-          state.profileId = state.profiles.length ? state.profiles[0].id : null;
-          persistProfile();
-          renderProfileChrome();
-          state.selection.clear();
-          render();
-          await loadApps();
-        }
+        renderProfileChrome();
+        render();
+        showWelcome();
         toast("Profile deleted");
       },
     });
   }
 
+  /* ---------------- welcome screen ---------------- */
+
+  function renderWelcome() {
+    const list = $("#welcome-list");
+    if (!list) return;
+    const addTile =
+      "<li>" +
+      '<button type="button" class="welcome-card welcome-add" id="welcome-add" title="Add a profile">' +
+      '<span class="welcome-avatar welcome-avatar-new" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' +
+      "</span>" +
+      '<span class="welcome-card-name">Add profile</span>' +
+      '<span class="welcome-card-meta">New user</span>' +
+      "</button></li>";
+
+    if (!state.profiles.length) {
+      list.innerHTML =
+        addTile + '<li class="welcome-empty">No profiles yet — use the plus to create one.</li>';
+      return;
+    }
+    list.innerHTML = state.profiles
+      .map((profile) => {
+        const jobs = profile.jobs || 0;
+        const detail = profile.locked
+          ? "PIN protected"
+          : profile.headline || profile.email || "No details yet";
+        const jobsLabel = jobs ? jobs + " job" + (jobs === 1 ? "" : "s") : "No jobs yet";
+        const meta = esc(detail) + "<br />" + esc(jobsLabel);
+        return (
+          "<li>" +
+          '<button type="button" class="welcome-card' +
+          (profile.id === state.profileId ? " is-current" : "") +
+          '" data-enter-profile="' + profile.id + '" title="Open ' + esc(profile.name) + '">' +
+          '<span class="welcome-avatar" aria-hidden="true">' +
+          esc(initials(profile.name)) +
+          (profile.locked ? '<span class="welcome-avatar-lock">' + ICON.lock + "</span>" : "") +
+          "</span>" +
+          '<span class="welcome-card-name">' + esc(profile.name) + "</span>" +
+          '<span class="welcome-card-meta">' + meta + "</span>" +
+          "</button></li>"
+        );
+      })
+      .join("") +
+      addTile;
+  }
+
+  function showWelcome() {
+    state.gate = true;
+    document.documentElement.classList.add("is-welcome");
+    renderWelcome();
+    $("#welcome").hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  function hideWelcome() {
+    state.gate = false;
+    document.documentElement.classList.remove("is-welcome");
+    $("#welcome").hidden = true;
+  }
+
+  async function enterProfile(id) {
+    const profile = state.profiles.find((item) => item.id === id);
+    if (!profile) return;
+    if (profile.locked && !tokenFor(id)) {
+      openUnlock(id);
+      return;
+    }
+    state.profileId = id;
+    persistProfile();
+    rememberSession(id);
+    hideWelcome();
+    state.selection.clear();
+    if (state.drawerId) closeDrawer();
+    renderProfileChrome();
+    render();
+    await loadApps();
+  }
+
+  /* ---------------- pin lock ---------------- */
+
+  function openUnlock(profileId) {
+    const profile = state.profiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    state.unlockId = profileId;
+    $("#unlock-avatar").textContent = initials(profile.name);
+    $("#unlock-name").textContent = profile.name;
+    $("#unlock-meta").textContent = profile.headline || "PIN protected";
+    $("#unlock-pin").value = "";
+    const error = $("#unlock-error");
+    error.hidden = true;
+    error.textContent = "";
+    if ($("#unlock-backdrop").hidden) {
+      $("#unlock-backdrop").hidden = false;
+      document.body.classList.add("no-scroll");
+    }
+    window.setTimeout(() => $("#unlock-pin").focus(), 40);
+  }
+
+  function closeUnlock() {
+    $("#unlock-backdrop").hidden = true;
+    state.unlockId = null;
+    document.body.classList.remove("no-scroll");
+    if (state.gate) return;
+    if (profileNeedsUnlock()) {
+      // There is nothing to show behind the prompt, so offer the profile chooser.
+      openProfiles();
+    }
+  }
+
+  async function submitUnlock(event) {
+    event.preventDefault();
+    const profileId = state.unlockId;
+    if (!profileId) return;
+    const input = $("#unlock-pin");
+    const pin = input.value.trim();
+    const box = $("#unlock-error");
+    if (!/^\d{4,8}$/.test(pin)) {
+      box.hidden = false;
+      box.textContent = "Enter the 4–8 digit PIN.";
+      input.focus();
+      return;
+    }
+    const button = $("#unlock-submit");
+    button.disabled = true;
+    try {
+      const result = await api("/api/profiles/" + profileId + "/unlock", {
+        method: "POST",
+        body: JSON.stringify({ pin: pin }),
+      });
+      setToken(profileId, result.token);
+      const index = state.profiles.findIndex((item) => item.id === profileId);
+      if (index !== -1 && result.profile) {
+        state.profiles[index] = Object.assign({}, state.profiles[index], result.profile);
+      }
+      state.unlockId = null;
+      $("#unlock-backdrop").hidden = true;
+      document.body.classList.remove("no-scroll");
+      state.profileId = profileId;
+      persistProfile();
+      rememberSession(profileId);
+      state.selection.clear();
+      if (state.drawerId) closeDrawer();
+      if (state.gate) hideWelcome();
+      renderProfileChrome();
+      render();
+      toast("Profile unlocked");
+      await loadApps();
+    } catch (error) {
+      box.hidden = false;
+      box.textContent = error.status === 401 ? "That PIN is not correct." : error.message;
+      input.select();
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function lockProfile(profile) {
+    if (!profile) return;
+    try {
+      await api("/api/profiles/" + profile.id + "/lock", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    } catch (error) {
+      toast(error.message, true);
+    }
+    clearToken(profile.id);
+    renderProfilesList();
+    if (profile.id === state.profileId) {
+      state.apps = [];
+      state.trash = [];
+      state.settings = Object.assign({}, DEFAULT_GOALS);
+      rememberSession(null);
+      closeProfiles();
+      render();
+      showWelcome();
+    }
+    toast(profile.name + " locked");
+  }
+
   /* ---------------- settings ---------------- */
+
+  function renderPinSettings() {
+    const profile = activeProfile();
+    const locked = !!(profile && profile.locked);
+    const status = $("#settings-pin-status");
+    status.textContent = locked
+      ? "On — this profile asks for its PIN when it is opened."
+      : "Off — this profile opens without a PIN.";
+    status.classList.toggle("is-on", locked);
+    $("#settings-pin-current-wrap").hidden = !locked;
+    $("#settings-pin-save").textContent = locked ? "Change PIN" : "Set PIN";
+    $("#settings-pin-remove").hidden = !locked;
+    ["#settings-pin-current", "#settings-pin-new", "#settings-pin-confirm"].forEach((id) => {
+      $(id).value = "";
+    });
+    const error = $("#settings-pin-error");
+    error.hidden = true;
+    error.textContent = "";
+  }
+
+  function pinError(message, focus) {
+    const box = $("#settings-pin-error");
+    box.hidden = false;
+    box.textContent = message;
+    if (focus) $(focus).focus();
+  }
+
+  async function savePin() {
+    const profile = activeProfile();
+    if (!profile) return;
+    const firstTime = !profile.locked;
+    const current = $("#settings-pin-current").value.trim();
+    const pin = $("#settings-pin-new").value.trim();
+    const confirm = $("#settings-pin-confirm").value.trim();
+    if (!/^\d{4,8}$/.test(pin)) {
+      pinError("The PIN must be 4–8 digits.", "#settings-pin-new");
+      return;
+    }
+    if (pin !== confirm) {
+      pinError("The two PINs do not match.", "#settings-pin-confirm");
+      return;
+    }
+    if (profile.locked && !/^\d{4,8}$/.test(current)) {
+      pinError("Enter the current PIN to change it.", "#settings-pin-current");
+      return;
+    }
+    const button = $("#settings-pin-save");
+    button.disabled = true;
+    try {
+      const result = await api("/api/profiles/" + profile.id + "/pin", {
+        method: "POST",
+        body: JSON.stringify({ pin: pin, current_pin: current }),
+      });
+      if (result && result.token) setToken(profile.id, result.token);
+      const index = state.profiles.findIndex((item) => item.id === profile.id);
+      if (index !== -1) state.profiles[index] = Object.assign({}, state.profiles[index], { locked: true });
+      renderPinSettings();
+      renderProfilesList();
+      renderProfileChrome();
+      toast(firstTime ? "PIN set — this profile now asks for it" : "PIN changed");
+    } catch (error) {
+      pinError(error.status === 401 ? "The current PIN is not correct." : error.message, "#settings-pin-current");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function removePin() {
+    const profile = activeProfile();
+    if (!profile || !profile.locked) return;
+    const current = $("#settings-pin-current").value.trim();
+    if (!/^\d{4,8}$/.test(current)) {
+      pinError("Enter the current PIN to remove the lock.", "#settings-pin-current");
+      return;
+    }
+    const button = $("#settings-pin-remove");
+    button.disabled = true;
+    try {
+      await api("/api/profiles/" + profile.id + "/pin", {
+        method: "POST",
+        body: JSON.stringify({ remove: true, current_pin: current }),
+      });
+      clearToken(profile.id);
+      const index = state.profiles.findIndex((item) => item.id === profile.id);
+      if (index !== -1) state.profiles[index] = Object.assign({}, state.profiles[index], { locked: false });
+      renderPinSettings();
+      renderProfilesList();
+      renderProfileChrome();
+      toast("PIN lock removed");
+    } catch (error) {
+      pinError(error.status === 401 ? "The current PIN is not correct." : error.message, "#settings-pin-current");
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   function openSettings() {
     const profile = activeProfile();
@@ -1777,6 +2147,8 @@
       : "Your details and the pace you want to keep.";
     $("#settings-daily").value = state.settings.daily_goal;
     $("#settings-weekly").value = state.settings.weekly_goal;
+    renderPinSettings();
+    $("#settings-delete-profile").hidden = state.profiles.length <= 1;
     const error = $("#settings-error");
     error.hidden = true;
     error.textContent = "";
@@ -2716,7 +3088,9 @@
     document.addEventListener("keydown", (event) => {
       const isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
       if (event.key === "Escape") {
-        if (!$("#profiles-backdrop").hidden) closeProfiles();
+        if (!$("#newprofile-backdrop").hidden) closeNewProfile();
+        else if (!$("#unlock-backdrop").hidden) closeUnlock();
+        else if (!$("#profiles-backdrop").hidden) closeProfiles();
         else if (!$("#settings-backdrop").hidden) closeSettings();
         else if (!$("#preview-backdrop").hidden) closePreview();
         else if (!$("#modal-backdrop").hidden) closeModal();
@@ -2744,20 +3118,51 @@
       if (event.target.id === "preview-backdrop") closePreview();
     });
 
+    $("#welcome-list").addEventListener("click", (event) => {
+      if (event.target.closest("#welcome-add")) {
+        openNewProfile();
+        return;
+      }
+      const card = event.target.closest("[data-enter-profile]");
+      if (card) enterProfile(Number(card.dataset.enterProfile));
+    });
+
+    $("#profiles-add").addEventListener("click", openNewProfile);
+    $("#newprofile-form").addEventListener("submit", createNewProfile);
+    $("#newprofile-close").addEventListener("click", closeNewProfile);
+    $("#newprofile-cancel").addEventListener("click", closeNewProfile);
+    $("#newprofile-backdrop").addEventListener("click", (event) => {
+      if (event.target.id === "newprofile-backdrop") closeNewProfile();
+    });
+    $("#settings-delete-profile").addEventListener("click", deleteCurrentProfile);
+
+    $("#unlock-form").addEventListener("submit", submitUnlock);
+    $("#unlock-close").addEventListener("click", closeUnlock);
+    $("#unlock-cancel").addEventListener("click", closeUnlock);
+    $("#unlock-switch").addEventListener("click", () => {
+      $("#unlock-backdrop").hidden = true;
+      state.unlockId = null;
+      openProfiles();
+    });
+    $("#unlock-backdrop").addEventListener("click", (event) => {
+      if (event.target.id === "unlock-backdrop") closeUnlock();
+    });
+    $("#settings-pin-save").addEventListener("click", savePin);
+    $("#settings-pin-remove").addEventListener("click", removePin);
+
     $("#profile-btn").addEventListener("click", openProfiles);
     $("#profiles-close").addEventListener("click", closeProfiles);
     $("#profiles-done").addEventListener("click", closeProfiles);
-    $("#profile-create").addEventListener("submit", createProfile);
     $("#profiles-backdrop").addEventListener("click", (event) => {
       if (event.target.id === "profiles-backdrop") closeProfiles();
     });
     $("#profile-list").addEventListener("click", (event) => {
-      const remove = event.target.closest("[data-delete-profile]");
-      if (remove) {
+      const lockNow = event.target.closest("[data-lock-profile]");
+      if (lockNow) {
         const profile = state.profiles.find(
-          (item) => item.id === Number(remove.dataset.deleteProfile)
+          (item) => item.id === Number(lockNow.dataset.lockProfile)
         );
-        deleteProfile(profile);
+        lockProfile(profile);
         return;
       }
       const pick = event.target.closest("[data-select-profile]");
@@ -3048,7 +3453,23 @@
     } catch (error) {
       toast(error.message, true);
     }
-    await loadApps();
+    // The picker is the first screen of every browser session; a reload of the
+    // same tab stays inside the profile it was opened with.
+    let session = NaN;
+    try {
+      session = Number(sessionStorage.getItem("jobpipe:session"));
+    } catch (error) {
+      session = NaN;
+    }
+    const current = state.profiles.find((profile) => profile.id === session);
+    if (current && (!current.locked || tokenFor(current.id))) {
+      state.profileId = current.id;
+      persistProfile();
+      renderProfileChrome();
+      await loadApps();
+    } else {
+      showWelcome();
+    }
   }
 
   document.addEventListener("DOMContentLoaded", init);

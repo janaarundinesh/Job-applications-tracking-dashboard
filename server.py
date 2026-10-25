@@ -10,13 +10,18 @@ Serves a small JSON API backed by SQLite plus the static frontend in ./public.
 import argparse
 import base64
 import binascii
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import sys
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,6 +63,9 @@ CREATE TABLE IF NOT EXISTS profiles (
     location   TEXT NOT NULL DEFAULT '',
     headline   TEXT NOT NULL DEFAULT '',
     links      TEXT NOT NULL DEFAULT '',
+    pin_hash   TEXT,
+    pin_salt   TEXT,
+    pin_set_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -130,6 +138,13 @@ PROFILE_LIMITS = {
     "links": 400,
 }
 SETTING_LIMITS = {"daily_goal": (1, 100), "weekly_goal": (1, 100)}
+PIN_MIN, PIN_MAX = 4, 8
+PIN_ITERATIONS = 120000
+UNLOCK_TTL = 12 * 60 * 60  # an unlocked profile stays open for one working day
+
+# Unlock tokens live in memory: restarting the server locks every profile again.
+UNLOCK_TOKENS = {}
+TOKEN_LOCK = threading.Lock()
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -204,6 +219,10 @@ def migrate(conn):
         conn.execute(
             "ALTER TABLE applications ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1"
         )
+    profile_columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
+    for column in ("pin_hash", "pin_salt", "pin_set_at"):
+        if profile_columns and column not in profile_columns:
+            conn.execute("ALTER TABLE profiles ADD COLUMN %s TEXT" % column)
     # Created here rather than in SCHEMA: older databases only gain the column above.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_apps_profile ON applications(profile_id)"
@@ -256,6 +275,135 @@ def event_dict(row):
 # Profiles
 # --------------------------------------------------------------------------
 
+PROFILE_FIELDS = [
+    "id",
+    "name",
+    "email",
+    "phone",
+    "location",
+    "headline",
+    "links",
+    "created_at",
+    "updated_at",
+]
+
+
+def profile_dict(row):
+    """A profile as the client sees it: never the PIN hash or salt."""
+    data = {key: row[key] for key in PROFILE_FIELDS if key in row.keys()}
+    data["locked"] = bool(row["pin_hash"]) if "pin_hash" in row.keys() else False
+    if data["locked"] and "pin_set_at" in row.keys():
+        data["pin_set_at"] = row["pin_set_at"]
+    return data
+
+
+def hash_pin(pin, salt):
+    return hashlib.pbkdf2_hmac(
+        "sha256", pin.encode("utf-8"), bytes.fromhex(salt), PIN_ITERATIONS
+    ).hex()
+
+
+def check_pin(row, pin):
+    if not pin or not row["pin_hash"] or not row["pin_salt"]:
+        return False
+    return hmac.compare_digest(row["pin_hash"], hash_pin(pin, row["pin_salt"]))
+
+
+def clean_pin(value):
+    if not isinstance(value, str):
+        raise ApiError(400, "A PIN must be text")
+    pin = value.strip()
+    if not pin.isdigit() or not PIN_MIN <= len(pin) <= PIN_MAX:
+        raise ApiError(400, "The PIN must be %d–%d digits" % (PIN_MIN, PIN_MAX))
+    return pin
+
+
+def issue_token(profile_id):
+    token = secrets.token_urlsafe(24)
+    now = time.time()
+    with TOKEN_LOCK:
+        for value in [key for key, item in UNLOCK_TOKENS.items() if item["expires"] < now]:
+            UNLOCK_TOKENS.pop(value, None)
+        UNLOCK_TOKENS[token] = {"profile_id": profile_id, "expires": now + UNLOCK_TTL}
+    return token
+
+
+def token_is_valid(token, profile_id):
+    if not token:
+        return False
+    with TOKEN_LOCK:
+        entry = UNLOCK_TOKENS.get(token)
+        if entry is None:
+            return False
+        if entry["expires"] < time.time():
+            UNLOCK_TOKENS.pop(token, None)
+            return False
+        return entry["profile_id"] == profile_id
+
+
+def revoke_tokens(profile_id):
+    with TOKEN_LOCK:
+        for token in [
+            key for key, item in UNLOCK_TOKENS.items() if item["profile_id"] == profile_id
+        ]:
+            UNLOCK_TOKENS.pop(token, None)
+
+
+def unlock_profile(db_path, profile_id, payload):
+    pin = payload.get("pin") if isinstance(payload, dict) else None
+    conn = connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise ApiError(404, "Profile not found")
+    if not row["pin_hash"]:
+        raise ApiError(400, "This profile has no PIN")
+    if not check_pin(row, pin.strip() if isinstance(pin, str) else ""):
+        raise ApiError(401, "That PIN is not correct")
+    return {"token": issue_token(profile_id), "profile": profile_dict(row)}
+
+
+def set_profile_pin(db_path, profile_id, payload):
+    """Turn the PIN lock on, change it, or remove it."""
+    if not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    conn = connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        if row is None:
+            raise ApiError(404, "Profile not found")
+        if row["pin_hash"]:
+            current = payload.get("current_pin")
+            if not isinstance(current, str) or not check_pin(row, current.strip()):
+                raise ApiError(401, "The current PIN is not correct")
+        if payload.get("remove"):
+            if not row["pin_hash"]:
+                raise ApiError(400, "This profile has no PIN")
+            conn.execute(
+                "UPDATE profiles SET pin_hash = NULL, pin_salt = NULL, pin_set_at = NULL,"
+                " updated_at = ? WHERE id = ?",
+                (now_iso(), profile_id),
+            )
+            conn.commit()
+            revoke_tokens(profile_id)
+            return {"locked": False}
+        pin = clean_pin(payload.get("pin"))
+        salt = secrets.token_hex(16)
+        stamp = now_iso()
+        conn.execute(
+            "UPDATE profiles SET pin_hash = ?, pin_salt = ?, pin_set_at = ?, updated_at = ?"
+            " WHERE id = ?",
+            (hash_pin(pin, salt), salt, stamp, stamp, profile_id),
+        )
+        conn.commit()
+        # Whoever just proved (or set) the PIN stays in without being asked again.
+        return {"locked": True, "token": issue_token(profile_id)}
+    finally:
+        conn.close()
+
+
 def clean_profile(payload, partial=False):
     if not isinstance(payload, dict):
         raise ApiError(400, "Expected a JSON object")
@@ -279,7 +427,10 @@ def list_profiles(db_path):
             " (SELECT COUNT(*) FROM applications a WHERE a.profile_id = p.id) AS total_jobs"
             " FROM profiles p ORDER BY p.id ASC"
         ).fetchall()
-        return [{key: row[key] for key in row.keys()} for row in rows]
+        return [
+            dict(profile_dict(row), jobs=row["jobs"], total_jobs=row["total_jobs"])
+            for row in rows
+        ]
     finally:
         conn.close()
 
@@ -299,7 +450,7 @@ def get_profile(db_path, profile_id):
         row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
         if row is None:
             raise ApiError(404, "Profile not found")
-        return app_dict(row)
+        return profile_dict(row)
     finally:
         conn.close()
 
@@ -328,7 +479,7 @@ def create_profile(db_path, payload):
         row = conn.execute(
             "SELECT * FROM profiles WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()
-        return app_dict(row)
+        return profile_dict(row)
     finally:
         conn.close()
 
@@ -343,7 +494,7 @@ def update_profile(db_path, profile_id, payload):
         if row is None:
             raise ApiError(404, "Profile not found")
         if not data:
-            return app_dict(row)
+            return profile_dict(row)
         assignments = ", ".join("%s = ?" % key for key in data.keys())
         conn.execute(
             "UPDATE profiles SET %s, updated_at = ? WHERE id = ?" % assignments,
@@ -353,7 +504,7 @@ def update_profile(db_path, profile_id, payload):
         row = conn.execute(
             "SELECT * FROM profiles WHERE id = ?", (profile_id,)
         ).fetchone()
-        return app_dict(row)
+        return profile_dict(row)
     finally:
         conn.close()
 
@@ -391,6 +542,7 @@ def delete_profile(db_path, profile_id):
         conn.commit()
     finally:
         conn.close()
+    revoke_tokens(profile_id)
     for app_id in ids:
         shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
     return {"deleted": profile_id, "jobs": len(ids), "files": files}
@@ -999,7 +1151,24 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
 
     # -- helpers ---------------------------------------------------------
+    def drain_body(self):
+        """Discard an unread request body. A body left in the socket would be
+        parsed as the next request line on a keep-alive connection."""
+        if getattr(self, "_body_read", False):
+            return
+        self._body_read = True
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if 0 < length <= MAX_BODY:
+            try:
+                self.rfile.read(length)
+            except (OSError, ValueError):
+                self.close_connection = True
+
     def send_json(self, payload, status=200):
+        self.drain_body()
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1066,6 +1235,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(chunk)
 
     def read_json(self):
+        self._body_read = True
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -1110,6 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
     def route(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        self._body_read = False
         self.query = parse_qs(parsed.query)
         parts = [unquote(part) for part in path.split("/") if part]
 
@@ -1124,19 +1295,39 @@ class Handler(BaseHTTPRequestHandler):
         """The profile a request works on: X-Profile-Id, else the first profile."""
         raw = (self.headers.get("X-Profile-Id") or "").strip()
         if not raw:
-            return default_profile_id(self.db_path)
-        try:
-            value = int(raw)
-        except ValueError:
-            raise ApiError(400, "Invalid profile id")
+            value = default_profile_id(self.db_path)
+        else:
+            try:
+                value = int(raw)
+            except ValueError:
+                raise ApiError(400, "Invalid profile id")
+            conn = connect(self.db_path)
+            try:
+                row = conn.execute("SELECT id FROM profiles WHERE id = ?", (value,)).fetchone()
+            finally:
+                conn.close()
+            if row is None:
+                raise ApiError(404, "Profile not found")
+        self.require_unlock(value)
+        return value
+
+    def require_unlock(self, profile_id):
+        """A PIN-protected profile answers only with a valid unlock token."""
         conn = connect(self.db_path)
         try:
-            row = conn.execute("SELECT id FROM profiles WHERE id = ?", (value,)).fetchone()
+            row = conn.execute(
+                "SELECT pin_hash FROM profiles WHERE id = ?", (profile_id,)
+            ).fetchone()
         finally:
             conn.close()
         if row is None:
             raise ApiError(404, "Profile not found")
-        return value
+        if not row["pin_hash"]:
+            return
+        token = (self.headers.get("X-Profile-Token") or "").strip()
+        if token_is_valid(token, profile_id):
+            return
+        raise ApiError(423, "This profile is locked")
 
     def profiles(self, parts):
         if not parts:
@@ -1145,17 +1336,42 @@ class Handler(BaseHTTPRequestHandler):
             if self.command == "POST":
                 return self.send_json(create_profile(self.db_path, self.read_json()), 201)
             raise ApiError(405, "Method not allowed")
-        if len(parts) != 1:
-            raise ApiError(404, "Unknown endpoint")
         try:
             profile_id = int(parts[0])
         except ValueError:
             raise ApiError(404, "Unknown endpoint")
+
+        if len(parts) == 2:
+            action = parts[1]
+            if self.command != "POST":
+                raise ApiError(405, "Method not allowed")
+            if action == "unlock":
+                return self.send_json(
+                    unlock_profile(self.db_path, profile_id, self.read_json())
+                )
+            if action == "lock":
+                revoke_tokens(profile_id)
+                profile = get_profile(self.db_path, profile_id)
+                return self.send_json({"locked": profile["locked"]})
+            if action == "pin":
+                self.require_unlock(profile_id)
+                return self.send_json(
+                    set_profile_pin(self.db_path, profile_id, self.read_json())
+                )
+            raise ApiError(404, "Unknown endpoint")
+
+        if len(parts) != 1:
+            raise ApiError(404, "Unknown endpoint")
         if self.command in ("GET", "HEAD"):
             return self.send_json(get_profile(self.db_path, profile_id))
         if self.command in ("PATCH", "PUT"):
+            self.require_unlock(profile_id)
             return self.send_json(update_profile(self.db_path, profile_id, self.read_json()))
         if self.command == "DELETE":
+            # A profile can only be removed from inside itself, never from
+            # another profile's dashboard.
+            if self.profile_id() != profile_id:
+                raise ApiError(403, "Delete a profile from inside it")
             return self.send_json(delete_profile(self.db_path, profile_id))
         raise ApiError(405, "Method not allowed")
 

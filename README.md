@@ -42,12 +42,22 @@ Click any row or card to open the detail drawer: stage, dates, salary, source, c
 
 The app keeps separate profiles — for example one for your own search and one for freelance work. Each profile has its own jobs, trash, documents and goals; nothing is shared between them.
 
-- The **profile button** in the header (your initials and the profile name) opens the profile screen. It lists every profile with its contact line and how many jobs it holds, and the active one is tagged **Current**.
-- **Click a profile** to switch to it. The dashboard reloads with that profile's jobs and goals, and the choice is remembered in the browser.
-- **Add profile** takes a name and creates it with no jobs and the default goals. Select it to start using it.
-- **Delete** (the bin icon, hidden when only one profile is left) asks first, then removes that profile with all of its jobs, attached files and goals. If you delete the profile you were using, the app continues on the remaining one.
+**The picker comes first.** Opening the dashboard in a new browser session shows a user screen with one round avatar per profile, its job count and a lock badge when it is PIN protected. Click an avatar to open that profile; the plus circle beside them adds someone new. Reloading the same tab goes straight back into the profile you were using — the picker returns in a new tab or after closing the browser.
+
+- The **profile button** in the header (your initials and the profile name) opens the same list as a dialog, with the active profile tagged **Current**, and **New profile** there creates another user.
+- **Clicking a profile** switches to it: the dashboard reloads with that profile's jobs and goals.
+- **Deleting a profile** happens only inside that profile: **Settings → Delete this profile…**, then a confirmation spelling out how many jobs and files go with it. A profile can never be deleted from someone else's dashboard; the API refuses it too. After deleting, the app returns to the user screen and keeps at least one profile.
 
 Contact details are edited in **Settings** and apply to the profile you are on.
+
+## PIN lock
+
+Any profile can be locked with a 4–8 digit PIN. It is set, changed or removed in **Settings → PIN lock**; changing or removing it asks for the current PIN.
+
+- A locked profile shows a padlock in the picker and asks for the PIN before its jobs are opened. Pressing the profile asks for the PIN, a wrong one says so and lets you try again.
+- The lock is enforced by the local server, not just the screen: jobs, documents, goals and trash of a locked profile answer `423 Locked` until a valid unlock token is supplied. The token lives in memory on the server and in that browser tab only; it lasts 12 hours, a page reload keeps it, and restarting the server or closing the tab asks for the PIN again.
+- **Lock now** in the profile dialog (the open-padlock icon on the active profile) drops the token and returns to the user screen immediately.
+- The PIN is stored as a salted PBKDF2-SHA256 hash, never in plain text. It protects the dashboard and its API, not the database file itself: anyone who can read `data/tracker.db` can still read the jobs without the PIN.
 
 ## Deleting and the trash
 
@@ -90,7 +100,7 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 ## Using the dashboard
 
 - **Search / filters** — search company, role, location, source, description and notes; filter by stage, location type and source. The same filters apply to whichever tab you are on (stage only matters for Applied).
-- **Settings** — the gear in the header opens one dialog with two parts: **Profile** (name, headline, email, phone, location, links) and **Goals** (daily and weekly). Both are saved to the profile you are currently on; **Save changes** stores them together.
+- **Settings** — the gear in the header opens one dialog with three parts: **Profile** (name, headline, email, phone, location, links), **Goals** (daily and weekly) and **PIN lock**. *Save changes* stores the details and goals together for the profile you are currently on; the PIN and *Delete this profile…* are separate actions.
 - **Sorting** — click table headers.
 - **Follow-ups** — any Applied job with a next-step date in the next 7 days appears on the Overview. Every due label — "Due tomorrow", "Due in 3d", "Overdue by 2d" — is shown in red, with overdue ones in a heavier weight and a stronger tint. The same red labels appear under the next step in the Applied table and in the detail drawer.
 - **Goals and streak** — the Overview has an **Application goals** panel with a ring for each target: daily and weekly (default 3 a day, 10 a week). Each ring shows applications sent against the target and turns green once it is met, and crossing a target while you use the app sets off a short confetti burst with a "Daily/Weekly goal complete" toast (confetti is skipped if your system asks for reduced motion; the toast still appears). Set the numbers in **Settings** — the gear in the header, or **Set goals** in the panel — and they are stored for the current profile in the database. A day counts once you have at least one application with that applied date; the week runs Monday to Sunday.
@@ -124,6 +134,8 @@ The backdrop drift and the goal confetti respect `prefers-reduced-motion`, and b
 - Trashed jobs still occupy their row and files until permanently deleted.
 - Back up by copying `data/`, or use **Export → Export as JSON**.
 - The server binds to `127.0.0.1` only — it is not reachable from other machines on your network.
+- PINs are stored hashed, but the database file is not encrypted; the PIN lock guards the dashboard, not `data/tracker.db` on disk.
+- Unlock tokens live in the server's memory, so restarting the server locks every PIN-protected profile again.
 
 ## Tests
 
@@ -134,7 +146,7 @@ python3 -m pip install pytest
 python3 -m pytest -q
 ```
 
-It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, and profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, and deleting a profile with everything it owns. GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
+It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, and profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, and the PIN lock (hashing, wrong PINs, unlock tokens, locking again, and refusing locked data without a token). GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
 ### Pre-commit hook
 
@@ -187,17 +199,22 @@ GET    /api/applications/<id>/documents/<doc>?inline=1  preview a PDF, image or 
 DELETE /api/applications/<id>/documents/<doc> remove a document
 GET    /api/settings                           daily and weekly application goals
 PATCH  /api/settings                           update goals, e.g. { "daily_goal": 5, "weekly_goal": 20 }
-GET    /api/profiles                           every profile with its job counts
+GET    /api/profiles                           every profile with its job counts and locked flag
 POST   /api/profiles                           create a profile, { "name": "Freelance", … }
 GET    /api/profiles/<id>                      one profile
 PATCH  /api/profiles/<id>                      update name, headline, email, phone, location, links
-DELETE /api/profiles/<id>                      remove the profile with its jobs, files and goals
+DELETE /api/profiles/<id>                      remove the profile with its jobs, files and goals;
+                                              only from inside that profile (X-Profile-Id must match)
+POST   /api/profiles/<id>/pin                  { "pin": "1234" } sets or changes it (needs current_pin
+                                              once set); { "remove": true, "current_pin": "…" } clears it
+POST   /api/profiles/<id>/unlock               { "pin": "1234" } → { "token": "…" }
+POST   /api/profiles/<id>/lock                 revoke every unlock token for the profile
 POST   /api/import                            { "applications": [ … ] }
 POST   /api/extract                           { "url": "https://…" }
 GET    /api/health
 ```
 
-Every endpoint except `/api/profiles*` and `/api/health` works on one profile. Send `X-Profile-Id: <id>` to pick it; without the header the first profile is used, which is what the dashboard does before it has loaded the profile list.
+Every endpoint except `GET /api/profiles` and `/api/health` works on one profile. Send `X-Profile-Id: <id>` to pick it; without the header the first profile is used, which is what the dashboard does before it has loaded the profile list. For a PIN-protected profile also send `X-Profile-Token` with the token from `/unlock`, otherwise the data endpoints answer `423`.
 
 Example:
 

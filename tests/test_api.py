@@ -384,7 +384,9 @@ def test_deleting_a_profile_removes_its_jobs_files_and_goals(api):
     assert folder.is_dir()
     api.patch("/api/settings", {"daily_goal": 9}, headers=headers)
 
-    response = api.delete("/api/profiles/%d" % other["id"])
+    # A profile is deleted from inside itself, not from another profile.
+    assert api.delete("/api/profiles/%d" % other["id"]).status == 403
+    response = api.delete("/api/profiles/%d" % other["id"], headers=headers)
     assert response.status == 200
     assert response.data == {"deleted": other["id"], "jobs": 1, "files": 1}
     assert not folder.exists()
@@ -412,3 +414,101 @@ def test_profile_counts_jobs_in_the_list(api):
     listed = api.get("/api/profiles").data
     assert listed[0]["jobs"] == 0
     assert listed[0]["total_jobs"] == 1
+
+
+def test_pin_lock_requires_a_valid_token(api):
+    profile = api.get("/api/profiles").data[0]
+    headers = as_profile(profile["id"])
+
+    # A profile without a PIN opens normally.
+    assert api.get("/api/applications", headers=headers).status == 200
+
+    # Turning the lock on hides the data until the PIN is entered.
+    set_pin = api.post("/api/profiles/%d/pin" % profile["id"], {"pin": "4321"})
+    assert set_pin.status == 200
+    assert set_pin.data["locked"] is True
+    # Setting the PIN keeps the caller inside instead of locking them out at once.
+    keep = dict(headers, **{"X-Profile-Token": set_pin.data["token"]})
+    assert api.get("/api/applications", headers=keep).status == 200
+    locked = api.get("/api/applications", headers=headers)
+    assert locked.status == 423
+    assert locked.data["error"] == "This profile is locked"
+    assert api.get("/api/settings", headers=headers).status == 423
+
+    # The profile list stays readable but never exposes the hash.
+    listed = api.get("/api/profiles").data[0]
+    assert listed["locked"] is True
+    assert "pin_hash" not in listed and "pin_salt" not in listed
+
+    # Wrong PINs are rejected without opening the profile.
+    assert api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "0000"}).status == 401
+    assert api.post("/api/profiles/%d/unlock" % profile["id"], {}).status == 401
+    assert api.get("/api/applications", headers=headers).status == 423
+
+    opened = api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "4321"})
+    assert opened.status == 200
+    assert opened.data["profile"]["locked"] is True
+    token = opened.data["token"]
+    assert token
+
+    unlocked = dict(headers, **{"X-Profile-Token": token})
+    assert api.get("/api/applications", headers=unlocked).status == 200
+    assert api.get("/api/settings", headers=unlocked).status == 200
+    # A bogus token is still refused.
+    assert (
+        api.get(
+            "/api/applications", headers=dict(headers, **{"X-Profile-Token": "bogus"})
+        ).status
+        == 423
+    )
+
+    # Locking again invalidates the token.
+    assert api.post("/api/profiles/%d/lock" % profile["id"], {}).status == 200
+    assert api.get("/api/applications", headers=unlocked).status == 423
+
+
+def test_pin_changes_and_removal_need_the_current_pin(api):
+    profile = api.get("/api/profiles").data[0]
+    path = "/api/profiles/%d/pin" % profile["id"]
+
+    for bad in ("12", "123456789", "abcd", "12 34"):
+        assert api.post(path, {"pin": bad}).status == 400
+
+    assert api.post(path, {"pin": "1234"}).status == 200
+    # Once locked, even PIN edits need an unlock token first.
+    assert api.post(path, {"pin": "5678", "current_pin": "1234"}).status == 423
+
+    token = api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "1234"}).data["token"]
+    unlocked = dict(as_profile(profile["id"]), **{"X-Profile-Token": token})
+    assert api.get("/api/applications", headers=unlocked).status == 200
+    assert api.post(path, {"pin": "5678", "current_pin": "0000"}, headers=unlocked).status == 401
+    assert api.post(path, {"pin": "5678"}, headers=unlocked).status == 401
+    changed = api.post(path, {"pin": "5678", "current_pin": "1234"}, headers=unlocked)
+    assert changed.status == 200
+    assert changed.data["token"]
+
+    # The new PIN is the one that opens the profile now.
+    assert api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "1234"}).status == 401
+    fresh = api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "5678"}).data["token"]
+    unlocked = dict(as_profile(profile["id"]), **{"X-Profile-Token": fresh})
+    assert api.post(path, {"remove": True, "current_pin": "1234"}, headers=unlocked).status == 401
+    assert api.post(path, {"remove": True, "current_pin": "5678"}, headers=unlocked).status == 200
+    assert api.get("/api/applications", headers=as_profile(profile["id"])).status == 200
+    assert api.get("/api/profiles").data[0]["locked"] is False
+
+
+def test_locked_profile_metadata_is_still_selectable(api):
+    profile = api.get("/api/profiles").data[0]
+    api.post("/api/profiles/%d/pin" % profile["id"], {"pin": "1111"})
+    listed = api.get("/api/profiles").data[0]
+    assert listed["name"] == "Personal"
+    assert listed["locked"] is True
+    assert listed["pin_set_at"]
+    assert api.get("/api/profiles/%d" % profile["id"]).status == 200
+    # Editing someone else's locked profile needs their PIN, and the profile can
+    # only be deleted from inside itself.
+    assert api.patch("/api/profiles/%d" % profile["id"], {"name": "Hacked"}).status == 423
+    assert api.delete("/api/profiles/%d" % profile["id"]).status == 423
+    other = api.post("/api/profiles", {"name": "Other"}).data
+    assert api.delete("/api/profiles/%d" % profile["id"], headers=as_profile(other["id"])).status == 403
+    assert api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "1111"}).status == 200

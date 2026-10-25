@@ -37,6 +37,32 @@
   </div>
 </div>
 
+<div class="welcome" id="welcome" hidden>
+  <div class="welcome-inner">
+    <div class="welcome-brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <path d="M4 7h16M4 12h10M4 17h6" />
+          <circle cx="18.5" cy="16.5" r="2.5" />
+        </svg>
+      </span>
+      <div class="brand-text">
+        <strong>Job Pipeline</strong>
+        <span>Application tracker</span>
+      </div>
+    </div>
+
+    <div class="welcome-head">
+      <h1>Who's applying today?</h1>
+      <p class="welcome-sub">Pick a profile to open its dashboard. Every profile keeps its own jobs, documents and goals.</p>
+    </div>
+
+    <ul class="welcome-list" id="welcome-list"></ul>
+
+    <p class="welcome-foot">Use the plus to add someone. Profiles with a PIN ask for it before their jobs are shown.</p>
+  </div>
+</div>
+
 <header class="topbar">
   <a class="brand" href="#" aria-label="Job Pipeline home">
     <span class="brand-mark" aria-hidden="true">
@@ -461,16 +487,72 @@
     </header>
     <div class="modal-body">
       <ul class="profile-list" id="profile-list"></ul>
-      <form class="profile-create" id="profile-create" novalidate>
-        <input id="profile-create-name" maxlength="80" placeholder="New profile name, e.g. Personal or Freelance" autocomplete="off" aria-label="New profile name" />
-        <button type="submit" class="btn" id="profile-create-btn">Add profile</button>
-      </form>
-      <p class="mode-hint">New profiles start with no jobs and the default goals. Fill in the contact details under Settings.</p>
-      <p class="form-error" id="profiles-error" hidden></p>
+      <p class="mode-hint">New profiles start with no jobs and the default goals. Fill in the contact details under Settings; each profile can only be deleted from inside itself.</p>
     </div>
     <footer class="modal-foot">
-      <span class="modal-foot-note">Switching profiles reloads jobs and goals.</span>
+      <button type="button" class="btn btn-ghost" id="profiles-add">New profile</button>
       <button type="button" class="btn btn-ghost" id="profiles-done">Done</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="newprofile-backdrop" hidden>
+  <div class="modal modal-xs" role="dialog" aria-modal="true" aria-labelledby="newprofile-title">
+    <header class="modal-head">
+      <div>
+        <h2 id="newprofile-title">New profile</h2>
+        <p class="modal-sub">Give the new user a name. You can add contact details in Settings later.</p>
+      </div>
+      <button type="button" class="btn btn-icon" id="newprofile-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <form id="newprofile-form" class="modal-body" novalidate>
+      <label class="field">
+        <span>Name</span>
+        <input id="newprofile-name" maxlength="80" placeholder="Freelance, Personal, Work…" autocomplete="off" />
+      </label>
+      <p class="form-error" id="newprofile-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="newprofile-cancel">Cancel</button>
+      <button type="submit" form="newprofile-form" class="btn btn-primary" id="newprofile-create">Create profile</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="unlock-backdrop" hidden>
+  <div class="modal modal-xs" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+    <header class="modal-head">
+      <div>
+        <h2 id="unlock-title">Locked profile</h2>
+        <p class="modal-sub" id="unlock-sub">Enter the PIN to open this profile.</p>
+      </div>
+      <button type="button" class="btn btn-icon" id="unlock-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <form id="unlock-form" class="modal-body" novalidate>
+      <div class="lock-profile">
+        <span class="avatar" id="unlock-avatar" aria-hidden="true">JP</span>
+        <span class="lock-profile-text">
+          <strong id="unlock-name">Profile</strong>
+          <span id="unlock-meta">PIN protected</span>
+        </span>
+        <span class="lock-glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.4"/><path d="M8.5 10V7.5a3.5 3.5 0 017 0V10"/></svg>
+        </span>
+      </div>
+      <label class="field">
+        <span>PIN</span>
+        <input id="unlock-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••" aria-describedby="unlock-error" />
+      </label>
+      <p class="form-error" id="unlock-error" hidden></p>
+      <p class="mode-hint">Your PIN is checked by the local server and only unlocks this browser tab. <button type="button" class="link-btn" id="unlock-switch">Use another profile</button></p>
+    </form>
+    <footer class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="unlock-cancel">Cancel</button>
+      <button type="submit" form="unlock-form" class="btn btn-primary" id="unlock-submit">Unlock</button>
     </footer>
   </div>
 </div>
@@ -520,6 +602,9 @@
           </label>
         </div>
         <p class="mode-hint">Saved to this profile only. Switch or add profiles from the profile button in the header.</p>
+        <div class="settings-profile-actions">
+          <button type="button" class="btn btn-ghost danger-text" id="settings-delete-profile">Delete this profile…</button>
+        </div>
       </section>
       <section class="settings-block">
         <h3 class="settings-heading">Goals</h3>
@@ -534,6 +619,30 @@
           </label>
         </div>
         <p class="mode-hint">A day counts once at least one application has been sent that day. Weeks run Monday to Sunday and the Overview shows your progress.</p>
+      </section>
+      <section class="settings-block">
+        <h3 class="settings-heading">PIN lock</h3>
+        <p class="settings-pin-status" id="settings-pin-status">Off — this profile opens without a PIN.</p>
+        <div class="field" id="settings-pin-current-wrap" hidden>
+          <span>Current PIN</span>
+          <input id="settings-pin-current" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••" />
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>New PIN</span>
+            <input id="settings-pin-new" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="4–8 digits" />
+          </label>
+          <label class="field">
+            <span>Confirm PIN</span>
+            <input id="settings-pin-confirm" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="Repeat it" />
+          </label>
+        </div>
+        <div class="settings-pin-actions">
+          <button type="button" class="btn" id="settings-pin-save">Set PIN</button>
+          <button type="button" class="btn btn-ghost danger-text" id="settings-pin-remove" hidden>Remove lock</button>
+        </div>
+        <p class="mode-hint">A PIN asks for 4–8 digits when this profile is opened. It unlocks this browser tab for 12 hours or until you lock the profile again, and it does not encrypt the database file.</p>
+        <p class="form-error" id="settings-pin-error" hidden></p>
       </section>
       <p class="form-error" id="settings-error" hidden></p>
     </form>
