@@ -90,12 +90,25 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 - Back up by copying `data/`, or use **Export → Export as JSON**.
 - The server binds to `127.0.0.1` only — it is not reachable from other machines on your network.
 
+## Tests
+
+The API suite runs the real HTTP server against a throwaway SQLite database in a temp directory, so it never touches `data/`.
+
+```bash
+python3 -m pip install pytest
+python3 -m pytest -q
+```
+
+It covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings and JSON import. GitHub Actions runs the same suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
+
 ## Files
 
 ```
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI (HTML, CSS, vanilla JS — no build step)
+tests/           pytest suite exercising the API end to end
+.github/         CI workflow that runs the tests
 data/            Created on first run: tracker.db + uploads/
 ```
 
