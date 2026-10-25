@@ -6,6 +6,10 @@ No accounts, no build step, no dependencies. Python 3.8+ standard library only. 
 
 ## Run it
 
+On macOS, double-click **Start Job Pipeline.command** in the project folder. It starts the server in a Terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that Terminal window open while you work; closing it or pressing `Ctrl+C` stops the server.
+
+From a terminal instead:
+
 ```bash
 python3 server.py            # http://127.0.0.1:8787
 python3 server.py --open     # ...and open it in your browser
@@ -140,6 +144,7 @@ If the interpreter it finds has no pytest, the hook says so and lets the commit 
 ## Files
 
 ```
+Start Job Pipeline.command  macOS double-click launcher (starts the server, opens the dashboard)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI (HTML, CSS, vanilla JS — no build step)
