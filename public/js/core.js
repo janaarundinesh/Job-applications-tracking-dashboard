@@ -356,7 +356,17 @@ export let apiToken = "";
 
 export async function sessionToken() {
   if (apiToken) return apiToken;
-  const response = await fetch("/api/session", { cache: "no-store" });
+  let response;
+  try {
+    response = await fetch("/api/session", { cache: "no-store" });
+  } catch (error) {
+    // A stopped server reaches us here before any request is made.
+    const offline = new Error(
+      "Can't reach the tracker server. Check that it is still running (python3 server.py), then try again."
+    );
+    offline.offline = true;
+    throw offline;
+  }
   if (!response.ok) throw new Error("The tracker refused this session. Reload the dashboard.");
   const payload = await response.json();
   apiToken = payload.token || "";
@@ -402,11 +412,14 @@ export async function request(path, options) {
     try {
       response = await fetch(path, init);
     } catch (retryError) {
-      throw new Error(
+      const offline = new Error(
         window.location.protocol === "file:"
           ? "Open the dashboard from http://127.0.0.1:8787 (run python3 server.py) instead of opening the HTML file directly."
           : "Can't reach the tracker server. Check that it is still running (python3 server.py), then try again."
       );
+      // Lets the boot path show the start screen instead of an empty picker.
+      offline.offline = true;
+      throw offline;
     }
   }
   const text = await response.text();

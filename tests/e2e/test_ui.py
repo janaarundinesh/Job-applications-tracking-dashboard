@@ -235,3 +235,57 @@ def test_skip_link_and_delete_confirmation(page):
     assert page.locator("main.page").get_attribute("inert") is None
     assert page.locator("#applied-table-body tr").count() == 1
     page.wait_for_function("document.activeElement.dataset.action === 'delete'")
+
+
+def test_dashboard_is_installable(page):
+    assert page.get_attribute('link[rel="manifest"]', "href") == "manifest.webmanifest"
+    manifest = page.evaluate("async () => (await fetch('/manifest.webmanifest')).json()")
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "/"
+    assert len(manifest["icons"]) >= 2
+
+    # The worker registers, takes over and caches the app shell.
+    page.wait_for_function(
+        "async () => { const r = await navigator.serviceWorker.getRegistration();"
+        " return !!(r && r.active); }",
+        timeout=15000,
+    )
+    cached = page.evaluate(
+        "async () => { const c = await caches.open('jobpipe-shell-v1');"
+        " return (await c.keys()).map((request) => new URL(request.url).pathname); }"
+    )
+    assert "/index.html" in cached
+    assert "/styles.css" in cached
+    assert "/js/main.js" in cached
+
+    # The title bar of an installed window follows the theme. The toggle lives
+    # in the header, so open a profile first (the picker has no top bar).
+    enter_profile(page)
+    before = page.get_attribute('meta[name="theme-color"]', "content")
+    assert before in ("#05060b", "#e8ecf7")
+    page.click("#theme-btn")
+    after = page.get_attribute('meta[name="theme-color"]', "content")
+    assert after != before
+
+
+def test_offline_start_screen_offers_a_retry(page, context):
+    page.wait_for_function(
+        "async () => { const r = await navigator.serviceWorker.getRegistration();"
+        " return !!(r && r.active); }",
+        timeout=15000,
+    )
+    page.wait_for_timeout(500)
+
+    # Opening the installed app while the server is down: the cached shell loads
+    # and tells you how to start the server instead of failing silently.
+    context.set_offline(True)
+    page.reload()
+    page.wait_for_selector("html.is-offline", state="attached", timeout=10000)
+    assert page.locator("#file-guard").is_visible()
+    assert page.locator("#file-guard-title").inner_text() == "Start the Job Pipeline server"
+
+    # Once the server is back, "Check again" brings the dashboard up.
+    context.set_offline(False)
+    page.click("#file-guard-retry")
+    page.wait_for_selector("#welcome-list [data-enter-profile]", timeout=10000)
+    assert page.evaluate("document.documentElement.classList.contains('is-offline')") is False

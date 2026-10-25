@@ -26,7 +26,19 @@ Options:
 
 Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
 
+Install the dashboard as an app if you like: see [Install it as an app](#install-it-as-an-app).
+
 Opening `public/index.html` from Finder works too: if the server is already running, the page forwards to it, and if it is not you get a short start screen with the command to run, a **Check again** button and a link to the dashboard. Either way the server must stay running for saves to land, so keep that Terminal window open. If an action reports that it cannot reach the server, start it again; a single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
+
+## Install it as an app
+
+The dashboard ships a [web app manifest](public/manifest.webmanifest) and a [service worker](public/sw.js), so it can run in its own window without browser tabs.
+
+- **Chrome, Edge, Brave** — open the dashboard, then use the install icon in the address bar (or ⋮ → *Cast, save and share* → *Install page as app*).
+- **Safari on macOS 14+** — **File → Add to Dock**. On iPhone or iPad, **Share → Add to Home Screen**.
+- Anything else that supports installing web apps will offer it too; the app is served from `http://127.0.0.1:8787`, so it only works while that server runs.
+
+The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Job Pipeline server* screen with the command and a **Check again** button. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
 
 ## The three tabs
 
@@ -108,7 +120,7 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 - **Rejecting a job** — moving any application to the Rejected stage (from the table, the board, the detail drawer or the edit form) immediately asks whether to delete it. **Delete job and files** removes the application, its notes, timeline and every attached resume, cover letter and other document from the database and disk; **Cancel** keeps it in the Applied tab as rejected. Marking a posting "No longer open" from the review panel does not ask, since that is already a confirmation step.
 - **Needs review** — once an application reaches 30 days in an active stage (Applied, Screening, Interview), it is automatically flagged: a **Review** badge appears in the table and on its board card, and it is listed in the **Needs review** panel on the Overview. Open it and choose **Still open** to record the check, or **No longer open** to close it as rejected. A reviewed job becomes due again after another 30 days, so long-running processes get checked monthly. Rejected, withdrawn and offered jobs, and jobs in To apply, are never flagged.
 - **Export** — every job as JSON or CSV, including phase, description and notes.
-- **Reminders** — **Settings → Reminders → Turn on notifications** asks the browser for permission once. After that, at most one notification per profile per day summarises what is due ("2 follow-ups due · 1 job to review") when you open the dashboard; it never fires twice for the same day, and nothing leaves your machine. Browsers that only allow notifications from a service worker simply show nothing.
+- **Reminders** — **Settings → Reminders → Turn on notifications** asks the browser for permission once. After that, at most one notification per profile per day summarises what is due ("2 follow-ups due · 1 job to review") when you open the dashboard; it never fires twice for the same day, and nothing leaves your machine. Where a page is not allowed to raise a notification (installed windows and mobile browsers), the service worker posts it instead and clicking it brings the dashboard forward.
 - Keyboard: `N` new job, `/` search, `Esc` close dialog/drawer, `Enter` opens the focused row, `Tab`/`Shift+Tab` stay inside an open dialog, arrow keys move between tabs.
 - Screen readers: dialogs are labelled, the page behind an open dialog is `inert`, focus returns to the button that opened it, and toasts are announced politely.
 - Theme follows your system preference; the header toggle overrides it and remembers your choice.
@@ -163,7 +175,7 @@ RUN_E2E=1 python3 -m pytest tests/e2e   # browser suite (needs Playwright)
 
 The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
 
-The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, and unlocks a PIN-protected profile.
+The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen with a working **Check again**.
 
 ```bash
 python3 -m playwright install chromium   # once, after installing requirements-dev
@@ -195,11 +207,13 @@ Start Job Pipeline.command  macOS double-click launcher (starts the server, open
 Start Job Pipeline.bat      Windows double-click launcher (same thing)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
-public/          Dashboard UI: index.html, styles.css and js/ ES modules (no build step)
+public/          Dashboard UI: index.html, styles.css, sw.js, manifest.webmanifest, icons
+                 and js/ ES modules (no build step)
   public/js/     main.js (events and boot), core.js (state, dates, API client), data.js
                  (loading and mutations), overview.js, workspace.js, drawer.js, dialogs.js,
                  profiles.js (picker, PIN, settings), io.js (import/export), a11y.js (dialog
-                 focus), reminders.js (daily notification)
+                 focus), reminders.js (daily notification), pwa.js (service worker and
+                 offline start screen)
 tests/           pytest suite exercising the API end to end
   tests/e2e/     Playwright suite driving the dashboard in Chromium
 data/            Created on first run: tracker.db, uploads/ and backups/

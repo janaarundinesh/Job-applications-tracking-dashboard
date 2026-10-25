@@ -2711,7 +2711,8 @@ kbd {
 
 .file-guard { display: none; }
 
-html.is-file .file-guard {
+html.is-file .file-guard,
+html.is-offline .file-guard {
   position: fixed;
   inset: 0;
   z-index: 200;
@@ -2725,7 +2726,10 @@ html.is-file .file-guard {
 }
 
 html.is-file .topbar,
-html.is-file .page { display: none; }
+html.is-file .page,
+html.is-offline .topbar,
+html.is-offline .page,
+html.is-offline .welcome { display: none; }
 
 .file-guard-card {
   width: min(560px, 100%);

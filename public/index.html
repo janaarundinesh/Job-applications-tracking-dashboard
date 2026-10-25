@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Job Pipeline — Application Tracker</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#05060b" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Job Pipeline" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <link rel="stylesheet" href="styles.css" />
 <script>
   // Opened straight from disk? Show the start screen instead of the app.
@@ -23,8 +30,8 @@
         <circle cx="18.5" cy="16.5" r="2.5" />
       </svg>
     </span>
-    <h1>Start the local server first</h1>
-    <p>
+    <h1 id="file-guard-title">Start the local server first</h1>
+    <p id="file-guard-lead">
       Job Pipeline keeps your data in a small Python server on this machine, so opening
       <code>index.html</code> from Finder cannot reach it. Start the server, then use the dashboard it opens.
     </p>

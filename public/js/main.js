@@ -10,6 +10,7 @@ import { closeNewProfile, closeProfiles, closeSettings, closeUnlock, createNewPr
 import { clearFilters, render, renderViewSwitch, renderWorkspace, setTab, syncFilterOptions } from "./workspace.js";
 import { installFocusManagement } from "./a11y.js";
 import { disableReminders, enableReminders, renderReminderSettings } from "./reminders.js";
+import { registerServiceWorker, showOfflineScreen, syncThemeColor } from "./pwa.js";
 
 
 export function bindEvents() {
@@ -452,10 +453,12 @@ export function bindEvents() {
   const initialTheme =
     storedTheme || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
   document.documentElement.setAttribute("data-theme", initialTheme);
+  syncThemeColor(initialTheme);
   $("#theme-btn").addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("jobpipe:theme", next);
+    syncThemeColor(next);
   });
 
   const menu = $("#data-menu");
@@ -533,6 +536,7 @@ export function bindEvents() {
 
 export function init() {
   installFocusManagement();
+  registerServiceWorker();
   $("#form-applied-on").value = todayISO();
   $("#form-status").innerHTML = statusSelectOptions("applied", false);
   $("#filter-status").innerHTML = statusSelectOptions("", true);
@@ -547,6 +551,11 @@ export async function boot() {
   try {
     await loadProfiles();
   } catch (error) {
+    // Served from the app icon while the server is down: offer a way back in.
+    if (error.offline && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      showOfflineScreen();
+      return;
+    }
     toast(error.message, true);
   }
   // The picker is the first screen of every browser session; a reload of the

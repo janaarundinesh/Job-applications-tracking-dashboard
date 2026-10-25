@@ -602,3 +602,28 @@ def test_daily_backup_runs_once_and_prunes(tmp_path):
     server.prune_backups(str(folder), keep=5)
     assert len(list(folder.glob("tracker-*.db"))) == 5
     assert (folder / "tracker-2020-01-19.db").exists()
+
+
+def test_installable_app_assets_are_served(api):
+    manifest = api.get("/manifest.webmanifest")
+    assert manifest.status == 200
+    assert manifest.headers["Content-Type"] == "application/manifest+json"
+    assert manifest.data["start_url"] == "/"
+    assert manifest.data["display"] == "standalone"
+    sizes = {
+        icon["sizes"]
+        for icon in manifest.data["icons"]
+        if icon.get("type") == "image/png" and icon.get("purpose", "any") == "any"
+    }
+    assert {"192x192", "512x512"} <= sizes
+
+    worker = api.get("/sw.js")
+    assert worker.status == 200
+    assert worker.headers["Content-Type"].startswith("text/javascript")
+    assert b"fetch" in worker.body and b"/api/" in worker.body
+
+    for path in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
+        icon = api.get(path)
+        assert icon.status == 200, path
+        assert icon.headers["Content-Type"] == "image/png", path
+        assert icon.body[:8] == b"\x89PNG\r\n\x1a\n", path

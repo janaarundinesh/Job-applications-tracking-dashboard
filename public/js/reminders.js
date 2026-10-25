@@ -105,9 +105,36 @@ export function reminderSummary() {
   return parts.join(" · ");
 }
 
+/* The installed app posts through the service worker, where a page is not
+   allowed to raise a notification itself. */
+function workerRegistration() {
+  if (!("serviceWorker" in navigator)) return Promise.resolve(null);
+  return Promise.race([
+    navigator.serviceWorker.ready.catch(() => null),
+    new Promise((resolve) => window.setTimeout(() => resolve(null), 2000)),
+  ]);
+}
+
+async function post(title, options) {
+  try {
+    new window.Notification(title, options);
+    return true;
+  } catch (error) {
+    // Mobile browsers and installed windows only allow the service worker.
+  }
+  const registration = await workerRegistration();
+  if (!registration || typeof registration.showNotification !== "function") return false;
+  try {
+    await registration.showNotification(title, options);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 /* At most one notification per profile per day, and only when the dashboard is
    open: this is a local tracker, not a background service. */
-export function maybeNotify() {
+export async function maybeNotify() {
   if (!remindersOn()) return false;
   const summary = reminderSummary();
   if (!summary) return false;
@@ -118,20 +145,13 @@ export function maybeNotify() {
   } catch (error) {
     /* carry on: a duplicate note is better than none */
   }
-  try {
-    const note = new window.Notification("Job Pipeline", {
-      body: summary,
-      tag: "jobpipe-reminders",
-      icon: "favicon.svg",
-    });
-    note.addEventListener("click", () => {
-      window.focus();
-      note.close();
-    });
-  } catch (error) {
-    // Mobile browsers only allow notifications from a service worker.
-    return false;
-  }
+  const shown = await post("Job Pipeline", {
+    body: summary,
+    tag: "jobpipe-reminders",
+    icon: "icon-192.png",
+    badge: "icon-192.png",
+  });
+  if (!shown) return false;
   try {
     if (storage) storage.setItem(seen, "1");
   } catch (error) {
