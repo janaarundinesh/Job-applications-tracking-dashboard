@@ -2303,7 +2303,6 @@ html.is-welcome .page { display: none; }
 }
 
 
-.welcome-foot { margin: 0; font-size: 11.5px; color: var(--text-faint); }
 
 @media (max-width: 560px) {
   .welcome { padding: 30px 16px 48px; align-items: start; }
