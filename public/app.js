@@ -464,7 +464,6 @@
     });
     $("#panel-overview").hidden = state.tab !== "overview";
     $("#workspace").hidden = state.tab === "overview";
-    $("#new-btn-label").textContent = state.tab === "to_apply" ? "Add job" : "New job";
   }
 
   function renderOverview() {
@@ -854,7 +853,7 @@
               title: "No saved jobs yet",
               text: "Save roles you plan to apply to, then move them to Applied once you have sent your application.",
               action: "new",
-              actionLabel: "Save a job",
+              actionLabel: "Add a New Application",
               primary: true,
             });
       }

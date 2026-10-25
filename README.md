@@ -46,7 +46,7 @@ There is no automatic emptying otherwise: jobs stay in the trash until you resto
 
 ## Adding jobs
 
-Click **New job** (or press `N`). There are three ways in:
+Click **Add job** (or press `N`). There are three ways in:
 
 1. **Manual** — fill in the form yourself, choosing **Applied** or **Saved — not applied yet** under Status.
 2. **From link** — paste a job posting URL and press **Fetch details**. The server reads the page's `schema.org JobPosting` JSON-LD (used by Greenhouse, Lever, Workable, many company career sites) and falls back to OpenGraph metadata. It fills company, role, location, work mode, salary, source, the job description, and the posting URL for you to review. Some sites (LinkedIn, many Workday boards) block automated requests or render postings with JavaScript — you'll get a clear error and can switch to manual entry. Nothing is saved without your confirmation. Only public `http(s)` addresses are fetched; private/loopback addresses are refused.
