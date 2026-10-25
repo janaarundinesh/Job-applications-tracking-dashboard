@@ -83,6 +83,21 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 - Keyboard: `N` new job, `/` search, `Esc` close dialog/drawer, `Enter` opens the focused row.
 - Theme follows your system preference; the header toggle overrides it and remembers your choice.
 
+## Look and feel
+
+The interface uses an Apple-style glass treatment: translucent frosted panels over a slowly drifting colour backdrop, a specular highlight along the top edge of each surface, soft layered shadows and rounded 20–26 px corners. Sheets, the detail drawer and dialogs are more opaque than the panels behind them, so text stays comfortable while the glass still reads as glass.
+
+Both themes are glass: the header toggle switches between dark smoked glass and light frosted glass. Everything is driven by custom properties at the top of `styles.css` if you want to retune it:
+
+- `--surface`, `--surface-raised`, `--surface-soft` — translucent panel tints; `--surface-solid` is the opaque base the drawer, dialogs and preview sheet mix with.
+- `--glass-edge`, `--glass-edge-soft`, `--glass-sheen` — the inner highlight and top-light gradient that make a surface look like glass.
+- `--glass-blur`, `--glass-sat` — the frosted blur and colour boost; the header, menus, board columns, drawer and dialogs blur harder than plain panels.
+- `--glow-1` … `--glow-4` — the colour orbs drifting behind everything.
+- `--scrim` — the dimmed, blurred layer behind the drawer and dialogs.
+- `--shadow-sm`, `--shadow-md`, `--shadow-lg` — the three shadow depths.
+
+The backdrop drift and the goal confetti respect `prefers-reduced-motion`, and browsers without `backdrop-filter` still get readable translucent tints instead of flat colour.
+
 ## Data and backups
 
 - Everything lives in `data/tracker.db` (SQLite, WAL mode); attachments in `data/uploads/`.
