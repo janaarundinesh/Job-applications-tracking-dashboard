@@ -464,7 +464,7 @@
     });
     $("#panel-overview").hidden = state.tab !== "overview";
     $("#workspace").hidden = state.tab === "overview";
-    $("#new-btn-label").textContent = state.tab === "to_apply" ? "Save job" : "New job";
+    $("#new-btn-label").textContent = state.tab === "to_apply" ? "Add job" : "New job";
   }
 
   function renderOverview() {
