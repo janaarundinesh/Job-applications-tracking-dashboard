@@ -2,7 +2,6 @@
 
 import base64
 import datetime
-import shutil
 
 import pytest
 
@@ -907,7 +906,9 @@ def test_resumes_are_kept_per_profile(api):
     assert not folder.exists()
 
 
-TECTONIC = shutil.which("tectonic")
+# Ask the server where it would look: it also accepts the copy that
+# install_tectonic.py leaves in tools/, which is not on PATH.
+TECTONIC = server.latex_engine()
 needs_tex = pytest.mark.skipif(TECTONIC is None, reason="tectonic is not installed")
 
 SIMPLE_TEX = r"""\documentclass{article}
@@ -978,9 +979,11 @@ def test_compiling_finds_an_uploaded_support_file(api):
     assert base64.b64decode(response.data["pdf"]).startswith(b"%PDF")
 
 
-def test_compile_says_when_no_latex_engine_is_installed(api, monkeypatch):
+def test_compile_says_when_no_latex_engine_is_installed(api, monkeypatch, tmp_path):
     resume = api.post("/api/resumes", {"name": "master"}).data
+    # No engine on PATH, and none in the folder the installer fills.
     monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tmp_path / "tools" / "tectonic"))
     response = api.post("/api/resumes/%d/compile" % resume["id"], {})
     assert response.status == 501
     assert "No LaTeX engine" in response.data["error"]

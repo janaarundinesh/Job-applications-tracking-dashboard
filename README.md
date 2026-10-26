@@ -2,7 +2,7 @@
 
 A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, resume / cover letter / document attachments, and an Overleaf-style resume editor with a live preview.
 
-No accounts, no build step, no dependencies. Python 3.8+ standard library only, and the frontend is plain ES modules that the browser loads directly. Data lives in SQLite on your machine.
+No accounts, no build step, no Python dependencies. Python 3.8+ standard library only, and the frontend is plain ES modules that the browser loads directly. Data lives in SQLite on your machine. The one optional extra is [Tectonic](https://tectonic-typesetting.github.io), a LaTeX engine the resume editor uses to compile a real PDF; the launchers install it for you, and everything works without it.
 
 ## Run it
 
@@ -25,6 +25,15 @@ Options:
 | `--open` | off | Open the dashboard in your default browser |
 
 Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
+
+The launchers also make sure [Tectonic](https://tectonic-typesetting.github.io) is available, because the resume editor's **Compile** button uses it to build a real PDF. On the first start they run [`install_tectonic.py`](install_tectonic.py), which downloads the official release for your machine — Apple silicon, Intel Mac or Windows — into `tools/tectonic/` (git-ignored) and leaves it there. An engine already on `PATH` from Homebrew, Cargo or Scoop is used as it is, and nothing is installed twice. If the download fails (offline, restricted network), the dashboard starts normally and **Compile** falls back to the in-app preview; each launch retries at most once a day. To do it by hand:
+
+```bash
+python3 install_tectonic.py          # same installer, prints what it does
+brew install tectonic                # macOS, if you prefer Homebrew
+```
+
+Windows users can run the launcher, use `python install_tectonic.py`, or follow the [Tectonic install page](https://tectonic-typesetting.github.io/install.html).
 
 Install the dashboard as an app if you like: see [Install it as an app](#install-it-as-an-app).
 
@@ -122,7 +131,7 @@ The **Resume** tab is a three-pane editor laid out like Overleaf: a rail of resu
 
 - **Source** — the editor is a plain textarea over the `.tex` file, so what you see is exactly what Overleaf will compile. `Tab` inserts two spaces, `Ctrl`/`Cmd`+`S` saves immediately, and everything else saves itself about a second after you stop typing (the header shows *Saved 14:32*). Tabs across the top switch between open resumes.
 - **Preview** — rendered in the browser as you type; no TeX installation, and it works on Windows. It understands the commands resumes actually use: `\section` / `\subsection` with optional `*`, `itemize` and `enumerate`, `\textbf`, `\textit`, `\emph`, `\underline`, `\texttt`, `\textsc`, `\href`, `\url`, `\hfill` right-aligned dates (the `Company … 2021 – 2024` line), `\begin{center}`, simple `tabular`, sizes such as `{\Large Name}`, `\textcolor`, `\definecolor`-free colours, dashes and quotes. Unknown macros are dropped but their arguments are kept, so a custom `\cvsection{…}` still shows its text. **Compile** re-renders on demand and reports how long it took, and the strip under the editor names unbalanced braces or an environment that is never closed (with the line), instead of quietly producing a broken page.
-- **Real PDF** — when [tectonic](https://tectonic-typesetting.github.io) is installed (`brew install tectonic`, `cargo install tectonic`), **Compile** runs it on the saved source and shows the actual PDF in the preview pane, with the stock browser viewer for pages, zoom and search. Uploaded support files are placed beside the `.tex` first, so `\includegraphics{profile.png}` resolves exactly as it does in Overleaf. Compiling is sandboxed (`--untrusted`, so no shell escape), limited to 60 seconds, and keeps the log. Without an engine — or when TeX refuses the source — the editor falls back to the in-app preview, and a TeX error puts the engine's log under the source instead of failing silently. Any edit returns to the live preview, because the PDF would be out of date.
+- **Real PDF** — when [tectonic](https://tectonic-typesetting.github.io) is installed (the launchers put it in `tools/tectonic/` on first start; `brew install tectonic` or `python3 install_tectonic.py` work too), **Compile** runs it on the saved source and shows the actual PDF in the preview pane, with the stock browser viewer for pages, zoom and search. Uploaded support files are placed beside the `.tex` first, so `\includegraphics{profile.png}` resolves exactly as it does in Overleaf. Compiling is sandboxed (`--untrusted`, so no shell escape), limited to 60 seconds, and keeps the log. Without an engine — or when TeX refuses the source — the editor falls back to the in-app preview, and a TeX error puts the engine's log under the source instead of failing silently. Any edit returns to the live preview, because the PDF would be out of date.
 - **Files** — upload a photo, a PDF, a bibliography, a note: anything that belongs beside the `.tex`. The rail lists each file with its size; click to open it in a new tab, `×` removes it. They are stored in `data/uploads/resume-<id>/` and deleted with the resume. Reference an image from the source and it renders in place:
 
   ```latex

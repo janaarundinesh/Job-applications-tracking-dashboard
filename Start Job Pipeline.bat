@@ -38,6 +38,10 @@ if not errorlevel 1 (
   exit /b 0
 )
 
+rem Compile can build a real PDF with Tectonic. It is optional: fetch it once
+rem into tools\tectonic, and carry on (in-app preview) if that is not possible.
+%PY% install_tectonic.py --quiet
+echo.
 echo Starting Job Pipeline...
 echo.
 %PY% server.py --open

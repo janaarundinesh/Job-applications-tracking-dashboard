@@ -1,0 +1,16 @@
+# Job Pipeline runs on the Python standard library alone: there is nothing to
+# pip install for the app itself. (requirements-dev.txt has the test tools.)
+#
+# The Resume tab's Compile button uses Tectonic, a self-contained LaTeX engine
+# that is not a Python package. It is optional — without it the editor falls
+# back to its in-app preview — and the macOS and Windows launchers install it
+# with install_tectonic.py on first start. To do it yourself:
+#
+#   macOS     brew install tectonic
+#   Windows   https://tectonic-typesetting.github.io/install.html
+#   any       python3 install_tectonic.py
+#
+# Tectonic lives in tools/tectonic/ (ignored by git) when this project installs it.
+#
+# Note: the PyPI project called "tectonic" is an unrelated 2013 placeholder, not
+# this engine. There is nothing to pip install for it — hence this file.

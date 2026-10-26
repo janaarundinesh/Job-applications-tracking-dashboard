@@ -36,6 +36,10 @@ if server_is_up; then
   exit 0
 fi
 
+# Compile can build a real PDF with Tectonic. It is optional: fetch it once
+# into tools/tectonic, and carry on (in-app preview) if that is not possible.
+python3 install_tectonic.py --quiet
+echo
 echo "Starting Job Pipeline…"
 echo
 python3 server.py --open

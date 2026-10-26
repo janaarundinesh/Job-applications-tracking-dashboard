@@ -1603,9 +1603,22 @@ def list_resumes(db_path, profile_id):
 MAX_COMPILE_SECONDS = 60
 COMPILE_LOCK = threading.Lock()
 
+# Where install_tectonic.py puts the engine it downloads. Keep this in step with
+# TOOLS in that script: it is the whole reason the launchers need no setup.
+TECTONIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "tectonic")
+
 
 def latex_engine():
-    """The TeX engine to compile with, if this machine has one installed."""
+    """The TeX engine to compile with, if this machine has one installed.
+
+    A copy fetched by install_tectonic.py lives in tools/ and is preferred, so
+    the launchers work without editing PATH; an engine installed by Homebrew,
+    Cargo or Scoop is found on PATH as usual.
+    """
+    for name in ("tectonic.exe", "tectonic"):
+        local = os.path.join(TECTONIC_DIR, name)
+        if os.path.isfile(local):
+            return local
     return shutil.which("tectonic")
 
 
