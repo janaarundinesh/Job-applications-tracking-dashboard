@@ -1,6 +1,6 @@
 # Job Pipeline
 
-A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, and resume / cover letter / document attachments.
+A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, resume / cover letter / document attachments, and an Overleaf-style resume editor with a live preview.
 
 No accounts, no build step, no dependencies. Python 3.8+ standard library only, and the frontend is plain ES modules that the browser loads directly. Data lives in SQLite on your machine.
 
@@ -40,12 +40,13 @@ The dashboard ships a [web app manifest](public/manifest.webmanifest) and a [ser
 
 The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Job Pipeline server* screen with the command and a **Check again** button. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
 
-## The three tabs
+## The tabs
 
 - **Overview** — total applications, active, interviews, offers, response rate, saved jobs, the stage funnel, applications per week (last 8 weeks) and follow-ups due in the next 7 days.
 - **Applied** — everything you have actually sent. Table view (search, filter, sort, inline stage changes) and board view (drag cards between Applied → Screening → Interview → Offer, plus Rejected/Withdrawn).
 - **To apply** — jobs you have saved but not sent yet. Also a table, with a one-click **Mark as applied** action on every row (or in the detail drawer). Saved jobs are excluded from pipeline stats, follow-up reminders and the board until you send them.
 - **Bulk actions** — tick the checkbox on several saved jobs (or the header checkbox to select everything currently shown) and a bar appears with **Mark as applied**, **Delete** and **Clear**. Marking several as applied sends them to the Applied tab with today's date; Delete asks once, then moves them all to Trash, where they can still be restored. The selection clears when you change tabs.
+- **Resume** — a LaTeX editor with the source on the left, the rendered page on the right and your resume files in the rail. See [Resume editor](#resume-editor).
 - **Trash** — deleted jobs wait here. Restore one, or delete it permanently when you are sure.
 
 Click any row or card to open the detail drawer: stage, dates, salary, source, contact, job description, documents, personal notes, and the full stage timeline.
@@ -113,6 +114,28 @@ Open a job and use the **Documents** section to attach a **resume**, **cover let
 
 Click a document name to preview it without leaving the dashboard: PDFs render in the browser's viewer inside the preview panel, images display inline, and plain text, CSV and Markdown files are shown as text. The panel also offers **Download** and **Open in tab**, and closes with `Esc`, the close button, or a click outside it. Word documents and other formats browsers cannot render show a short notice with a download link instead. Files are served with a safe content type and never as executable HTML.
 
+## Resume editor
+
+The **Resume** tab is a three-pane editor laid out like Overleaf: a rail of resume files, the LaTeX source with line numbers, and the rendered page. It is per profile, so each person keeps their own.
+
+- **Source** — the editor is a plain textarea over the `.tex` file, so what you see is exactly what Overleaf will compile. `Tab` inserts two spaces, `Ctrl`/`Cmd`+`S` saves immediately, and everything else saves itself about a second after you stop typing (the header shows *Saved 14:32*). Tabs across the top switch between open resumes.
+- **Preview** — rendered in the browser as you type; no TeX installation, and it works on Windows. It understands the commands resumes actually use: `\section` / `\subsection` with optional `*`, `itemize` and `enumerate`, `\textbf`, `\textit`, `\emph`, `\underline`, `\texttt`, `\textsc`, `\href`, `\url`, `\hfill` right-aligned dates (the `Company … 2021 – 2024` line), `\begin{center}`, simple `tabular`, sizes such as `{\Large Name}`, `\textcolor`, `\definecolor`-free colours, dashes and quotes. Unknown macros are dropped but their arguments are kept, so a custom `\cvsection{…}` still shows its text. **Compile** re-renders on demand and reports how long it took, and the strip under the editor names unbalanced braces or an environment that is never closed (with the line), instead of quietly producing a broken page.
+- **Files** — upload a photo, a PDF, a bibliography, a note: anything that belongs beside the `.tex`. The rail lists each file with its size; click to open it in a new tab, `×` removes it. They are stored in `data/uploads/resume-<id>/` and deleted with the resume. Reference an image from the source and it renders in place:
+
+  ```latex
+  \begin{center}
+  {\LARGE \textbf{Arun Dinesh Jana}}\\[3pt]
+  \includegraphics[width=3cm]{profile.png}\\
+  janaarundinesh@gmail.com
+  \end{center}
+  ```
+
+  `width=` accepts `cm`, `mm`, `in`, `pt`, `px`, `em` and a `0.3\textwidth` fraction; without it the image is capped to the page width. A file that has not been uploaded is shown as a dashed placeholder instead, so a missing photo is visible rather than silent.
+- **Master and tailored resumes** — **Start from a template** writes a starter resume from your profile (name, headline, location, phone, email, links) that already renders. Keep your general versions as masters. Every job's detail drawer has a **Resume** button: it creates a tailored copy from your newest master — source *and* support files — and opens it, or reopens the copy you already made for that job. The rail groups them under *Tailored for jobs* with the company and role.
+- **Export** — **Download .tex** for Overleaf or your own LaTeX setup, and **Print / Save as PDF**, which prints just the page (no dashboard chrome) through the browser's print dialog.
+
+The preview is an approximation of LaTeX, not a TeX engine: the fonts, spacing and page breaks will differ from a compiled PDF, so check anything you actually send in Overleaf. Typing after `\end{document}` is ignored, exactly as in LaTeX.
+
 ## Using the dashboard
 
 - **Search / filters** — search company, role, location, source, description and notes; filter by stage, location type and source. The same filters apply to whichever tab you are on (stage only matters for Applied).
@@ -149,9 +172,9 @@ The backdrop drift and the goal confetti respect `prefers-reduced-motion`, and b
 
 ## Data and backups
 
-- Everything lives in `data/tracker.db` (SQLite, WAL mode); attachments in `data/uploads/`.
+- Everything lives in `data/tracker.db` (SQLite, WAL mode); attachments in `data/uploads/` — one folder per job (`<job id>/`) and one per resume with files (`resume-<id>/`).
 - **Automatic snapshots** — the first time the server starts each day it copies the database to `data/backups/tracker-YYYY-MM-DD.db` (SQLite's own backup, so it is consistent even while the app is open) and keeps the newest 14 copies. A day with no backup yet is added on the next start.
-- **Download a backup** — **Settings → Backup → Download backup (.zip)** saves `tracker.db` together with every uploaded document in one zip, ready to keep somewhere else. The zip is built from a fresh snapshot, so it is safe to download while you work.
+- **Download a backup** — **Settings → Backup → Download backup (.zip)** saves `tracker.db` together with every uploaded document and resume file in one zip, ready to keep somewhere else. The zip is built from a fresh snapshot, so it is safe to download while you work.
 - Trashed jobs still occupy their row and files until permanently deleted.
 - You can also copy `data/` by hand, or use **Export → Export as JSON** for a readable copy of the jobs.
 - PINs are stored hashed, but the database file is not encrypted; the PIN lock guards the dashboard, not `data/tracker.db` on disk.
@@ -178,7 +201,7 @@ python3 -m pytest -q                    # API suite
 RUN_E2E=1 python3 -m pytest tests/e2e   # browser suite (needs Playwright)
 ```
 
-The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token), importing (the to-apply default, the notes a file folds in, the match estimate and its validation) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
+The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token), importing (the to-apply default, the notes a file folds in, the match estimate and its validation), resumes (the starter, source and file limits, support-file upload and download, tailored copies that inherit the master's files, and per-profile isolation) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
 
 The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen with a working **Check again**.
 
@@ -216,9 +239,9 @@ public/          Dashboard UI: index.html, styles.css, sw.js, manifest.webmanife
                  and js/ ES modules (no build step)
   public/js/     main.js (events and boot), core.js (state, dates, API client), data.js
                  (loading and mutations), overview.js, workspace.js, drawer.js, dialogs.js,
-                 profiles.js (picker, PIN, settings), io.js (import/export), a11y.js (dialog
-                 focus), reminders.js (daily notification), pwa.js (service worker and
-                 offline start screen)
+                 profiles.js (picker, PIN, settings), io.js (import/export), resume.js
+                 (resume editor and LaTeX preview), a11y.js (dialog focus), reminders.js
+                 (daily notification), pwa.js (service worker and offline start screen)
 tests/           pytest suite exercising the API end to end
   tests/e2e/     Playwright suite driving the dashboard in Chromium
 data/            Created on first run: tracker.db, uploads/ and backups/
@@ -246,6 +269,15 @@ POST   /api/applications/<id>/documents       upload { filename, kind, content_t
 GET    /api/applications/<id>/documents/<doc> download a document
 GET    /api/applications/<id>/documents/<doc>?inline=1  preview a PDF, image or text file inline
 DELETE /api/applications/<id>/documents/<doc> remove a document
+GET    /api/resumes                            resumes with their file counts
+POST   /api/resumes                            { "name": "master.tex" } starts from a template,
+                                              { "application_id": 1 } makes a tailored copy of the master
+GET    /api/resumes/<id>                       one resume with its source and files
+PATCH  /api/resumes/<id>                       { "source", "name", "label" }
+DELETE /api/resumes/<id>                       remove the resume and its files
+POST   /api/resumes/<id>/files                 upload { filename, content_type, data (base64) }
+GET    /api/resumes/<id>/files/<file>          open a support file (images inline)
+DELETE /api/resumes/<id>/files/<file>          remove a support file
 GET    /api/settings                           daily and weekly application goals
 PATCH  /api/settings                           update goals, e.g. { "daily_goal": 5, "weekly_goal": 20 }
 GET    /api/profiles                           every profile with its job counts and locked flag

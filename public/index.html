@@ -92,6 +92,7 @@
     <button class="tab" data-tab="to_apply" role="tab" aria-selected="false">
       To apply <span class="tab-count" id="count-toapply">0</span>
     </button>
+    <button class="tab" data-tab="resume" role="tab" aria-selected="false">Resume</button>
     <button class="tab" data-tab="trash" role="tab" aria-selected="false">
       Trash <span class="tab-count" id="count-trash">0</span>
     </button>
@@ -310,6 +311,80 @@
 
     <!-- applied: board -->
     <div class="board" id="board" hidden></div>
+  </section>
+
+  <!-- ============ Resume editor ============ -->
+  <section class="panel-view resume-view" id="panel-resume" role="tabpanel" aria-label="Resume editor" hidden>
+    <div class="resume-app" id="resume-app">
+      <aside class="resume-rail" aria-label="Resume files">
+        <div class="resume-rail-head">
+          <h2>Files</h2>
+          <button type="button" class="btn btn-icon resume-rail-add" data-resume-action="new" title="New resume" aria-label="New resume">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+        <div class="resume-tree" id="resume-tree"></div>
+        <div class="resume-assets" id="resume-assets"></div>
+        <p class="resume-rail-foot">The preview renders common LaTeX commands. Download the <code>.tex</code> to compile it in Overleaf.</p>
+      </aside>
+
+      <div class="resume-empty" id="resume-empty" hidden>
+        <div class="resume-empty-card">
+          <h2>No resume open</h2>
+          <p>Start from a template built from your profile — name, headline and contact details are filled in — then edit the source on the left. The page on the right updates as you type.</p>
+          <button type="button" class="btn btn-primary" data-resume-action="new">Start from a template</button>
+        </div>
+      </div>
+
+      <div class="resume-main" id="resume-editor-area" hidden>
+        <div class="resume-tabs-bar">
+          <div class="resume-tabs" id="resume-tabs" role="tablist" aria-label="Open resumes"></div>
+        </div>
+
+        <div class="resume-bar">
+          <button type="button" class="btn btn-primary resume-compile" id="resume-compile">Compile</button>
+          <span class="resume-status" id="resume-status">Saved</span>
+          <span class="resume-bar-spacer"></span>
+          <input class="resume-name" id="resume-name" aria-label="Resume file name" spellcheck="false" autocomplete="off" />
+          <div class="menu-wrap">
+            <button type="button" class="btn btn-ghost" id="resume-menu-btn" aria-haspopup="true" aria-expanded="false">Export</button>
+            <div class="menu" id="resume-menu" hidden>
+              <button type="button" data-resume-export="tex">Download .tex</button>
+              <button type="button" data-resume-export="pdf">Print / Save as PDF</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-icon danger-text" id="resume-delete" title="Delete this resume" aria-label="Delete this resume">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+          </button>
+        </div>
+
+        <div class="resume-delete-bar" id="resume-delete-bar" hidden>
+          <span class="resume-delete-text"></span>
+          <button type="button" class="btn btn-danger" id="resume-delete-confirm">Delete</button>
+          <button type="button" class="btn btn-ghost" id="resume-delete-cancel">Cancel</button>
+        </div>
+
+        <div class="resume-editor">
+          <div class="resume-gutter" id="resume-gutter" aria-hidden="true"></div>
+          <textarea class="resume-source" id="resume-source" spellcheck="false" wrap="off" aria-label="LaTeX source"></textarea>
+        </div>
+        <div class="resume-issues" id="resume-issues" hidden></div>
+      </div>
+
+      <div class="resume-side" id="resume-side" hidden>
+        <div class="resume-preview-head">
+          <span class="resume-preview-title" id="resume-preview-title">Preview</span>
+          <span class="resume-zoom">
+            <button type="button" data-zoom="-" aria-label="Zoom out">−</button>
+            <span id="resume-zoom">100%</span>
+            <button type="button" data-zoom="+" aria-label="Zoom in">+</button>
+          </span>
+        </div>
+        <div class="resume-canvas" id="resume-canvas">
+          <article class="resume-page" id="resume-preview-page" aria-label="Resume preview"></article>
+        </div>
+      </div>
+    </div>
   </section>
 </main>
 

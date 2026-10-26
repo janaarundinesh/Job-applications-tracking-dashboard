@@ -717,3 +717,139 @@ def test_installable_app_assets_are_served(api):
         assert icon.status == 200, path
         assert icon.headers["Content-Type"] == "image/png", path
         assert icon.body[:8] == b"\x89PNG\r\n\x1a\n", path
+
+
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def test_resume_editor_starts_from_the_profile(api):
+    created = api.post("/api/resumes", {"name": "master_software"})
+    assert created.status == 201
+    resume = created.data
+    assert resume["name"] == "master_software.tex"
+    assert resume["application_id"] is None
+    assert resume["files"] == []
+    assert "\\begin{document}" in resume["source"]
+    assert "Technical Skills" in resume["source"]
+
+    listed = api.get("/api/resumes").data
+    assert [(item["name"], item["file_count"]) for item in listed] == [("master_software.tex", 0)]
+    # The list stays small: the source only travels with the one resume opened.
+    assert "source" not in listed[0]
+
+    detail = api.get("/api/resumes/%d" % resume["id"])
+    assert detail.status == 200
+    assert detail.data["source"] == resume["source"]
+
+    saved = api.patch("/api/resumes/%d" % resume["id"], {"source": "\\section{Hi}"})
+    assert saved.data["source"] == "\\section{Hi}"
+    assert api.patch("/api/resumes/%d" % resume["id"], {}).status == 400
+    assert api.patch("/api/resumes/%d" % resume["id"], {"source": "x" * 200001}).status == 413
+
+    # A name is a file name: no folders, and always a .tex.
+    renamed = api.patch("/api/resumes/%d" % resume["id"], {"name": "../../etc/passwd"})
+    assert renamed.data["name"] == "passwd.tex"
+
+    assert api.delete("/api/resumes/%d" % resume["id"]).status == 200
+    assert api.get("/api/resumes/%d" % resume["id"]).status == 404
+
+
+def test_resume_support_files_are_stored_and_served(api):
+    resume = api.post("/api/resumes", {"name": "master"}).data
+    path = "/api/resumes/%d/files" % resume["id"]
+    uploaded = api.post(
+        path,
+        {
+            "filename": "profile.png",
+            "content_type": "image/png",
+            "data": base64.b64encode(PNG).decode("ascii"),
+        },
+    )
+    assert uploaded.status == 201
+    assert uploaded.data["filename"] == "profile.png"
+    assert uploaded.data["url"] == "/api/resumes/%d/files/%d" % (resume["id"], uploaded.data["id"])
+
+    assert [file["filename"] for file in api.get("/api/resumes/%d" % resume["id"]).data["files"]] == [
+        "profile.png"
+    ]
+    # A browser loads the image without a session header, so it downloads bare.
+    downloaded = api.get(uploaded.data["url"], token="")
+    assert downloaded.status == 200
+    assert downloaded.headers["Content-Type"] == "image/png"
+    assert downloaded.body == PNG
+    on_disk = api.uploads_dir("resume-%d" % resume["id"])
+    assert on_disk.is_dir()
+
+    assert api.post(path, {"filename": "", "data": "aGk="}).status == 400
+    assert api.post(path, {"filename": "empty.txt"}).status == 400
+    assert api.delete(uploaded.data["url"]).status == 200
+    assert api.get("/api/resumes/%d" % resume["id"]).data["files"] == []
+    assert api.delete(uploaded.data["url"]).status == 404
+
+
+def test_tailored_resume_copies_the_master_and_its_files(api):
+    job = api.create(company="Airbus", role="Simulation Developer")
+    master = api.post("/api/resumes", {"name": "master"}).data
+    api.post(
+        "/api/resumes/%d/files" % master["id"],
+        {
+            "filename": "profile.png",
+            "content_type": "image/png",
+            "data": base64.b64encode(PNG).decode("ascii"),
+        },
+    )
+
+    tailored = api.post("/api/resumes", {"application_id": job["id"]})
+    assert tailored.status == 201
+    assert tailored.data["application_id"] == job["id"]
+    assert tailored.data["source"] == master["source"]
+    assert [file["filename"] for file in tailored.data["files"]] == ["profile.png"]
+    assert tailored.data["label"] == "Airbus — Simulation Developer"
+
+    # The copy owns its files: removing one leaves the master's untouched.
+    copied = tailored.data["files"][0]
+    assert api.delete(
+        "/api/resumes/%d/files/%d" % (tailored.data["id"], copied["id"])
+    ).status == 200
+    assert len(api.get("/api/resumes/%d" % master["id"]).data["files"]) == 1
+
+    jobs = {item["application_id"]: item for item in api.get("/api/resumes").data}
+    assert jobs[job["id"]]["job_company"] == "Airbus"
+    assert jobs[job["id"]]["job_role"] == "Simulation Developer"
+
+    # The job's permanent delete takes its tailored resume, and its files.
+    api.delete("/api/applications/%d" % job["id"])
+    api.delete("/api/applications/%d?permanent=1" % job["id"])
+    assert [item["name"] for item in api.get("/api/resumes").data] == ["master.tex"]
+    assert not api.uploads_dir("resume-%d" % tailored.data["id"]).exists()
+
+
+def test_resumes_are_kept_per_profile(api):
+    mine = api.post("/api/resumes", {"name": "mine"}).data
+    job = api.create(company="Mine", role="Engineer")
+    api.post("/api/profiles", {"name": "Theirs"})
+    mine_headers = as_profile(1)
+    theirs_headers = as_profile(2)
+
+    assert api.get("/api/resumes", headers=theirs_headers).data == []
+    assert api.get("/api/resumes/%d" % mine["id"], headers=theirs_headers).status == 404
+    # A resume cannot be attached to another profile's job.
+    response = api.post(
+        "/api/resumes",
+        {"application_id": job["id"]},
+        headers=theirs_headers,
+    )
+    assert response.status == 404
+
+    # Deleting the profile takes its resumes and their files with it.
+    api.post(
+        "/api/resumes/%d/files" % mine["id"],
+        {"filename": "a.txt", "data": base64.b64encode(b"hi").decode("ascii")},
+        headers=mine_headers,
+    )
+    folder = api.uploads_dir("resume-%d" % mine["id"])
+    assert folder.is_dir()
+    assert api.delete("/api/profiles/1", headers=mine_headers).status == 200
+    assert not folder.exists()

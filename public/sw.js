@@ -25,6 +25,7 @@ const SHELL = [
   "/js/io.js",
   "/js/a11y.js",
   "/js/reminders.js",
+  "/js/resume.js",
   "/js/pwa.js",
 ];
 

@@ -215,6 +215,7 @@ export function drawerHTML(app, events, documents) {
     '<footer class="drawer-foot">' +
     '<button class="btn btn-ghost danger-text" data-action="delete" data-id="' + app.id + '">Move to trash</button>' +
     '<div class="drawer-foot-actions">' +
+    '<button class="btn" data-action="open-resume" data-id="' + app.id + '" title="Open or tailor a resume for this job">Resume</button>' +
     '<button class="btn" data-action="edit" data-id="' + app.id + '">Edit</button>' +
     (saved
       ? '<button class="btn btn-primary" data-action="mark-applied" data-id="' + app.id + '">Mark as applied</button>'

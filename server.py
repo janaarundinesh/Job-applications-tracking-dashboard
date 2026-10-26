@@ -127,6 +127,27 @@ CREATE TABLE IF NOT EXISTS documents (
     uploaded_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS resumes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id     INTEGER NOT NULL DEFAULT 1,
+    application_id INTEGER,
+    name           TEXT NOT NULL,
+    label          TEXT NOT NULL DEFAULT '',
+    source         TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS resume_files (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_id    INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    stored_name  TEXT NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size         INTEGER NOT NULL DEFAULT 0,
+    uploaded_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     profile_id INTEGER NOT NULL DEFAULT 1,
     key        TEXT NOT NULL,
@@ -138,6 +159,9 @@ CREATE INDEX IF NOT EXISTS idx_events_app ON status_events(application_id);
 CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_apps_phase ON applications(phase);
 CREATE INDEX IF NOT EXISTS idx_docs_app ON documents(application_id);
+CREATE INDEX IF NOT EXISTS idx_resumes_profile ON resumes(profile_id);
+CREATE INDEX IF NOT EXISTS idx_resumes_app ON resumes(application_id);
+CREATE INDEX IF NOT EXISTS idx_resume_files ON resume_files(resume_id);
 """
 
 DEFAULT_PROFILE_NAME = "Personal"
@@ -274,7 +298,8 @@ def build_backup_archive(db_path):
                 "README.txt",
                 "Job Pipeline backup taken %s\n\n"
                 "tracker.db is the SQLite database; uploads/ holds the documents "
-                "that belong to each job (one folder per job id).\n" % now_iso(),
+                "that belong to each job (one folder per job id) and the support "
+                "files of each resume (resume-<id>).\n" % now_iso(),
             )
         return handle.name
     except Exception:
@@ -637,6 +662,18 @@ def delete_profile(db_path, profile_id):
                 % placeholders,
                 ids,
             ).fetchone()["count"]
+        resume_ids = [
+            item["id"]
+            for item in conn.execute(
+                "SELECT id FROM resumes WHERE profile_id = ?", (profile_id,)
+            ).fetchall()
+        ]
+        conn.execute(
+            "DELETE FROM resume_files WHERE resume_id IN"
+            " (SELECT id FROM resumes WHERE profile_id = ?)",
+            (profile_id,),
+        )
+        conn.execute("DELETE FROM resumes WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM applications WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM settings WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
@@ -646,6 +683,8 @@ def delete_profile(db_path, profile_id):
     revoke_tokens(profile_id)
     for app_id in ids:
         shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
+    for resume_id in resume_ids:
+        shutil.rmtree(resume_file_folder(db_path, resume_id), ignore_errors=True)
     return {"deleted": profile_id, "jobs": len(ids), "files": files}
 
 
@@ -1037,6 +1076,23 @@ def purge_trash(db_path, profile_id):
             "SELECT COUNT(*) AS count FROM documents WHERE application_id IN (%s)" % placeholders,
             ids,
         ).fetchone()["count"]
+        # A tailored resume belongs to its job; deleting the job deletes it too.
+        resume_ids = [
+            row["id"]
+            for row in conn.execute(
+                "SELECT id FROM resumes WHERE application_id IN (%s)" % placeholders,
+                ids,
+            ).fetchall()
+        ]
+        if resume_ids:
+            conn.execute(
+                "DELETE FROM resume_files WHERE resume_id IN (%s)"
+                % ",".join("?" for _ in resume_ids),
+                resume_ids,
+            )
+        conn.execute(
+            "DELETE FROM resumes WHERE application_id IN (%s)" % placeholders, ids
+        )
         conn.execute(
             "DELETE FROM applications WHERE deleted_at IS NOT NULL AND profile_id = ?",
             (profile_id,),
@@ -1046,6 +1102,8 @@ def purge_trash(db_path, profile_id):
         conn.close()
     for app_id in ids:
         shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
+    for resume_id in resume_ids:
+        shutil.rmtree(resume_file_folder(db_path, resume_id), ignore_errors=True)
     return {"deleted": len(ids), "files": files}
 
 
@@ -1061,11 +1119,24 @@ def purge_application(db_path, profile_id, app_id):
             raise ApiError(404, "Application not found")
         if not row["deleted_at"]:
             raise ApiError(400, "Move the job to the trash before deleting it permanently")
+        resume_ids = [
+            row["id"]
+            for row in conn.execute(
+                "SELECT id FROM resumes WHERE application_id = ?", (app_id,)
+            ).fetchall()
+        ]
+        for resume_id in resume_ids:
+            conn.execute(
+                "DELETE FROM resume_files WHERE resume_id = ?", (resume_id,)
+            )
+        conn.execute("DELETE FROM resumes WHERE application_id = ?", (app_id,))
         conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
         conn.commit()
     finally:
         conn.close()
     shutil.rmtree(os.path.join(uploads_root(db_path), str(app_id)), ignore_errors=True)
+    for resume_id in resume_ids:
+        shutil.rmtree(resume_file_folder(db_path, resume_id), ignore_errors=True)
 
 
 # --------------------------------------------------------------------------
@@ -1228,6 +1299,467 @@ def delete_document(db_path, profile_id, app_id, doc_id):
         os.remove(path)
     except OSError:
         pass
+
+
+# --------------------------------------------------------------------------
+# Resumes
+# --------------------------------------------------------------------------
+
+RESUME_LIMITS = {"name": 120, "label": 160}
+RESUME_SOURCE_LIMIT = 200000
+MAX_RESUMES = 60
+
+# Longest first: the preview renders a subset of LaTeX, so a starter that only
+# uses the supported commands looks right immediately.
+STARTER_RESUME = r"""%% Job Pipeline resume — edit the source here, the preview updates as you type.
+%% Download the .tex from Export when you want to compile it in Overleaf.
+%% Upload a photo or any support file in the Files rail, then reference it:
+%% \includegraphics[width=3cm]{profile.png}
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{%(name)s}}\\[3pt]
+%(headline)s\\[2pt]
+%(contact)s
+\end{center}
+
+\section{Summary}
+%(summary)s
+
+\section{Technical Skills}
+\textbf{Programming:} C++, Python, SQL\\
+\textbf{Tools:} Git, Linux, Docker
+
+\section{Experience}
+\textbf{Company Name} \hfill Start -- End\\
+\textit{Role title}
+\begin{itemize}
+\item What you built, the technology you used and the result it had.
+\item A second point: scope, numbers, and why it mattered.
+\end{itemize}
+
+\section{Education}
+\textbf{University Name} \hfill Start -- End\\
+M.Sc. in your field
+
+\section{Languages}
+English (C1) \hfill German (B1)
+
+\end{document}
+"""
+
+
+LATEX_SPECIALS = {
+    "\\": r"\textbackslash{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def latex_escape(value):
+    """Profile text goes into a LaTeX template, so escape what LaTeX reads."""
+    return "".join(LATEX_SPECIALS.get(char, char) for char in (value or ""))
+
+
+def resume_dict(row, full=False):
+    data = {
+        "id": row["id"],
+        "application_id": row["application_id"],
+        "name": row["name"],
+        "label": row["label"],
+        "size": len(row["source"] or ""),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+    if "file_count" in row.keys():
+        data["file_count"] = row["file_count"]
+    if "job_company" in row.keys():
+        data["job_company"] = row["job_company"] or ""
+        data["job_role"] = row["job_role"] or ""
+    if full:
+        data["source"] = row["source"] or ""
+    return data
+
+
+def clean_resume_name(value, fallback="resume.tex"):
+    """A file name a person would recognise: no folders, no odd characters."""
+    text = os.path.basename(str(value or "").strip().replace("\\", "/"))
+    text = re.sub(r"[^A-Za-z0-9._ -]", "", text).strip(" .")
+    if not text:
+        text = fallback
+    if not text.lower().endswith(".tex"):
+        text += ".tex"
+    return text[: RESUME_LIMITS["name"] + 4]
+
+
+def clean_resume_source(payload):
+    raw = payload.get("source", "")
+    if raw is None:
+        raw = ""
+    if not isinstance(raw, str):
+        raise ApiError(400, "source must be text")
+    if len(raw) > RESUME_SOURCE_LIMIT:
+        raise ApiError(
+            413, "A resume can be at most %d characters" % RESUME_SOURCE_LIMIT
+        )
+    return raw
+
+
+def starter_resume(conn, profile_id):
+    row = conn.execute(
+        "SELECT * FROM profiles WHERE id = ?", (profile_id,)
+    ).fetchone()
+    profile = dict(row) if row is not None else {}
+    name = latex_escape(profile.get("name") or "Your Name")
+    headline = latex_escape(
+        profile.get("headline") or "Software Engineer | Your focus areas"
+    )
+    contact = " | ".join(
+        latex_escape(value)
+        for value in (
+            profile.get("location"),
+            profile.get("phone"),
+            profile.get("email"),
+            profile.get("links"),
+        )
+        if value
+    ) or "City, Country | your@email.com | linkedin.com/in/you"
+    summary = (
+        "One short paragraph on who you are, what you build and what you are "
+        "looking for next."
+    )
+    return STARTER_RESUME % {
+        "name": name,
+        "headline": headline,
+        "contact": contact,
+        "summary": summary,
+    }
+
+
+def resume_job_id(conn, profile_id, payload):
+    """The job a tailored copy belongs to, or None for a master resume."""
+    raw = payload.get("application_id")
+    if raw is None or raw == "" or raw == 0:
+        return None
+    if isinstance(raw, bool):
+        raise ApiError(400, "application_id must be a job id")
+    try:
+        app_id = int(raw)
+    except (TypeError, ValueError):
+        raise ApiError(400, "application_id must be a job id")
+    row = conn.execute(
+        "SELECT id FROM applications WHERE id = ? AND profile_id = ?",
+        (app_id, profile_id),
+    ).fetchone()
+    if row is None:
+        raise ApiError(404, "Application not found")
+    return app_id
+
+
+def resume_file_folder(db_path, resume_id):
+    return os.path.join(uploads_root(db_path), "resume-%s" % resume_id)
+
+
+def resume_file_dict(row, resume_id):
+    return {
+        "id": row["id"],
+        "filename": row["filename"],
+        "content_type": row["content_type"],
+        "size": row["size"],
+        "uploaded_at": row["uploaded_at"],
+        "url": "/api/resumes/%s/files/%s" % (resume_id, row["id"]),
+    }
+
+
+def list_resume_files(conn, resume_id):
+    rows = conn.execute(
+        "SELECT * FROM resume_files WHERE resume_id = ? ORDER BY filename COLLATE NOCASE",
+        (resume_id,),
+    ).fetchall()
+    return [resume_file_dict(row, resume_id) for row in rows]
+
+
+def save_resume_file(db_path, profile_id, resume_id, payload):
+    """Attach a support file (a photo, a bibliography, a note) to a resume."""
+    if not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    filename = _document_filename(payload)
+    content_type = _str(payload, "content_type", 120) or "application/octet-stream"
+    encoded = payload.get("data")
+    if not isinstance(encoded, str) or not encoded.strip():
+        raise ApiError(400, "File data is required")
+    if encoded.startswith("data:") and "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(400, "File data is not valid base64")
+    if not raw:
+        raise ApiError(400, "That file is empty")
+    if len(raw) > UPLOAD_LIMIT:
+        raise ApiError(413, "Files must be 10 MB or smaller")
+
+    conn = connect(db_path)
+    try:
+        owner = conn.execute(
+            "SELECT id FROM resumes WHERE id = ? AND profile_id = ?",
+            (resume_id, profile_id),
+        ).fetchone()
+        if owner is None:
+            raise ApiError(404, "Resume not found")
+        extension = os.path.splitext(filename)[1].lower().lstrip(".")
+        extension = "".join(char for char in extension if char.isalnum())[:10]
+        stored_name = uuid.uuid4().hex + (("." + extension) if extension else "")
+        folder = resume_file_folder(db_path, resume_id)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, stored_name), "wb") as handle:
+            handle.write(raw)
+        cursor = conn.execute(
+            "INSERT INTO resume_files"
+            " (resume_id, filename, stored_name, content_type, size, uploaded_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (resume_id, filename, stored_name, content_type, len(raw), now_iso()),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM resume_files WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+        return resume_file_dict(row, resume_id)
+    finally:
+        conn.close()
+
+
+def find_resume_file(db_path, profile_id, resume_id, file_id):
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT f.* FROM resume_files f JOIN resumes r ON r.id = f.resume_id"
+            " WHERE f.id = ? AND f.resume_id = ? AND r.profile_id = ?",
+            (file_id, resume_id, profile_id),
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "File not found")
+        path = os.path.join(
+            resume_file_folder(db_path, resume_id), row["stored_name"]
+        )
+        if not os.path.isfile(path):
+            raise ApiError(404, "That file is missing on disk")
+        return row, path
+    finally:
+        conn.close()
+
+
+def delete_resume_file(db_path, profile_id, resume_id, file_id):
+    conn = connect(db_path)
+    try:
+        row = find_resume_file(db_path, profile_id, resume_id, file_id)[0]
+        conn.execute("DELETE FROM resume_files WHERE id = ?", (file_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    try:
+        os.remove(
+            os.path.join(resume_file_folder(db_path, resume_id), row["stored_name"])
+        )
+    except OSError:
+        pass
+    return {"deleted": file_id}
+
+
+def list_resumes(db_path, profile_id):
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT r.*, a.company AS job_company, a.role AS job_role,"
+            " (SELECT COUNT(*) FROM resume_files f WHERE f.resume_id = r.id) AS file_count"
+            " FROM resumes r LEFT JOIN applications a ON a.id = r.application_id"
+            " WHERE r.profile_id = ?"
+            " ORDER BY r.application_id IS NOT NULL ASC, r.application_id ASC,"
+            " r.updated_at DESC",
+            (profile_id,),
+        ).fetchall()
+        return [resume_dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_resume(db_path, profile_id, resume_id):
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT r.*, a.company AS job_company, a.role AS job_role"
+            " FROM resumes r LEFT JOIN applications a ON a.id = r.application_id"
+            " WHERE r.id = ? AND r.profile_id = ?",
+            (resume_id, profile_id),
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "Resume not found")
+        data = resume_dict(row, full=True)
+        data["files"] = list_resume_files(conn, resume_id)
+        return data
+    finally:
+        conn.close()
+
+
+def create_resume(db_path, profile_id, payload):
+    if not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    conn = connect(db_path)
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) AS count FROM resumes WHERE profile_id = ?", (profile_id,)
+        ).fetchone()["count"]
+        if count >= MAX_RESUMES:
+            raise ApiError(400, "You can keep up to %d resumes" % MAX_RESUMES)
+        app_id = resume_job_id(conn, profile_id, payload)
+        name = clean_resume_name(payload.get("name"), "resume-%d.tex" % (count + 1))
+        label = _str(payload, "label", RESUME_LIMITS["label"])
+        if not label and app_id is not None:
+            job = conn.execute(
+                "SELECT company, role FROM applications WHERE id = ?", (app_id,)
+            ).fetchone()
+            label = " — ".join(part for part in (job["company"], job["role"]) if part)
+        if not label:
+            label = os.path.splitext(name)[0]
+
+        # Where the text comes from: an explicit copy, the master resume, or a
+        # starter written from the profile. A tailored copy starts from the
+        # newest master so it is a real starting point, not a blank page.
+        source = ""
+        template_id = None
+        if payload.get("copy_of") not in (None, "", 0):
+            try:
+                copy_id = int(payload.get("copy_of"))
+            except (TypeError, ValueError):
+                raise ApiError(400, "copy_of must be a resume id")
+            row = conn.execute(
+                "SELECT id, source FROM resumes WHERE id = ? AND profile_id = ?",
+                (copy_id, profile_id),
+            ).fetchone()
+            if row is None:
+                raise ApiError(404, "Resume to copy not found")
+            source = row["source"] or ""
+            template_id = row["id"]
+        elif "source" in payload:
+            source = clean_resume_source(payload)
+        else:
+            master = conn.execute(
+                "SELECT id, source FROM resumes"
+                " WHERE profile_id = ? AND application_id IS NULL"
+                " ORDER BY updated_at DESC, id DESC LIMIT 1",
+                (profile_id,),
+            ).fetchone()
+            if master is not None:
+                source = master["source"] or ""
+                template_id = master["id"]
+            else:
+                source = starter_resume(conn, profile_id)
+
+        stamp = now_iso()
+        cursor = conn.execute(
+            "INSERT INTO resumes"
+            " (profile_id, application_id, name, label, source, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (profile_id, app_id, name, label, source, stamp, stamp),
+        )
+        resume_id = cursor.lastrowid
+
+        # A copy keeps its support files: a tailored resume that references the
+        # photo still has the photo.
+        if template_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM resume_files WHERE resume_id = ?", (template_id,)
+            ).fetchall()
+            if rows:
+                folder = resume_file_folder(db_path, resume_id)
+                os.makedirs(folder, exist_ok=True)
+                origin = resume_file_folder(db_path, template_id)
+                for row in rows:
+                    stored = uuid.uuid4().hex + os.path.splitext(row["stored_name"])[1]
+                    try:
+                        shutil.copy2(
+                            os.path.join(origin, row["stored_name"]),
+                            os.path.join(folder, stored),
+                        )
+                    except OSError:
+                        continue
+                    conn.execute(
+                        "INSERT INTO resume_files"
+                        " (resume_id, filename, stored_name, content_type, size, uploaded_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            resume_id,
+                            row["filename"],
+                            stored,
+                            row["content_type"],
+                            row["size"],
+                            stamp,
+                        ),
+                    )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_resume(db_path, profile_id, resume_id)
+
+
+def update_resume(db_path, profile_id, resume_id, payload):
+    if not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    updates = {}
+    if "source" in payload:
+        updates["source"] = clean_resume_source(payload)
+    if "name" in payload:
+        updates["name"] = clean_resume_name(payload.get("name"))
+    if "label" in payload:
+        updates["label"] = _str(payload, "label", RESUME_LIMITS["label"])
+    if not updates:
+        raise ApiError(400, "Nothing to update")
+    updates["updated_at"] = now_iso()
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id FROM resumes WHERE id = ? AND profile_id = ?",
+            (resume_id, profile_id),
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "Resume not found")
+        assignments = ", ".join("%s = ?" % key for key in updates)
+        conn.execute(
+            "UPDATE resumes SET %s WHERE id = ?" % assignments,
+            list(updates.values()) + [resume_id],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_resume(db_path, profile_id, resume_id)
+
+
+def delete_resume(db_path, profile_id, resume_id):
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id FROM resumes WHERE id = ? AND profile_id = ?",
+            (resume_id, profile_id),
+        ).fetchone()
+        if row is None:
+            raise ApiError(404, "Resume not found")
+        conn.execute("DELETE FROM resume_files WHERE resume_id = ?", (resume_id,))
+        conn.execute("DELETE FROM resumes WHERE id = ?", (resume_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    shutil.rmtree(resume_file_folder(db_path, resume_id), ignore_errors=True)
+    return {"deleted": resume_id}
 
 
 # Analysis a file may carry next to a posting; folded into the notes the app shows.
@@ -1559,8 +2091,12 @@ class Handler(BaseHTTPRequestHandler):
         if host not in LOOPBACK_HOSTS and host not in self.allowed_hosts:
             raise ApiError(403, "This server only answers on this machine")
 
+        # Browsers open these directly (an image in the preview, a download
+        # link), so they cannot carry the session header either.
         is_document_download = (
-            len(parts) == 4 and parts[0] == "applications" and parts[2] == "documents"
+            len(parts) == 4
+            and parts[2] in ("documents", "files")
+            and parts[0] in ("applications", "resumes")
         )
         if is_document_download or parts[0] == "session":
             return
@@ -1690,6 +2226,72 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(extract_job(target.strip()))
                 except ExtractionError as error:
                     raise ApiError(422, str(error))
+
+            if parts[0] == "resumes":
+                if len(parts) == 1:
+                    if self.command == "GET":
+                        return self.send_json(list_resumes(self.db_path, profile_id))
+                    if self.command == "POST":
+                        return self.send_json(
+                            create_resume(self.db_path, profile_id, self.read_json()), 201
+                        )
+                    raise ApiError(405, "Method not allowed")
+                if len(parts) >= 3 and parts[2] == "files":
+                    try:
+                        resume_id = int(parts[1])
+                    except ValueError:
+                        raise ApiError(404, "Unknown endpoint")
+                    if len(parts) == 3:
+                        if self.command != "POST":
+                            raise ApiError(405, "Method not allowed")
+                        return self.send_json(
+                            save_resume_file(
+                                self.db_path, profile_id, resume_id, self.read_json()
+                            ),
+                            201,
+                        )
+                    if len(parts) == 4:
+                        try:
+                            file_id = int(parts[3])
+                        except ValueError:
+                            raise ApiError(404, "Unknown endpoint")
+                        if self.command in ("GET", "HEAD"):
+                            row, path = find_resume_file(
+                                self.db_path, profile_id, resume_id, file_id
+                            )
+                            return self.send_document(
+                                path, row["content_type"], row["filename"], inline=True
+                            )
+                        if self.command == "DELETE":
+                            return self.send_json(
+                                delete_resume_file(
+                                    self.db_path, profile_id, resume_id, file_id
+                                )
+                            )
+                        raise ApiError(405, "Method not allowed")
+                    raise ApiError(404, "Unknown endpoint")
+
+                if len(parts) == 2:
+                    try:
+                        resume_id = int(parts[1])
+                    except ValueError:
+                        raise ApiError(404, "Unknown endpoint")
+                    if self.command == "GET":
+                        return self.send_json(
+                            get_resume(self.db_path, profile_id, resume_id)
+                        )
+                    if self.command in ("PATCH", "PUT"):
+                        return self.send_json(
+                            update_resume(
+                                self.db_path, profile_id, resume_id, self.read_json()
+                            )
+                        )
+                    if self.command == "DELETE":
+                        return self.send_json(
+                            delete_resume(self.db_path, profile_id, resume_id)
+                        )
+                    raise ApiError(405, "Method not allowed")
+                raise ApiError(404, "Unknown endpoint")
 
             if parts[0] == "trash":
                 if len(parts) != 1:

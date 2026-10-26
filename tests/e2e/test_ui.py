@@ -4,6 +4,7 @@ Run them with `RUN_E2E=1 .venv/bin/python -m pytest tests/e2e -q`; without the
 environment variable the suite is skipped so the pre-commit hook stays fast.
 """
 
+import base64
 import datetime
 import json
 
@@ -367,3 +368,130 @@ def test_offline_start_screen_offers_a_retry(page, context):
     page.click("#file-guard-retry")
     page.wait_for_selector("#welcome-list [data-enter-profile]", timeout=10000)
     assert page.evaluate("document.documentElement.classList.contains('is-offline')") is False
+
+
+RESUME_SOURCE = r"""\documentclass[11pt]{article}
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{Test Person}}\\[3pt]
+test@example.com
+\end{center}
+
+\section{Experience}
+\textbf{Acme GmbH} \hfill 2024 -- 2025\\
+Simulation Engineer
+\begin{itemize}
+\item Built a particle model in C++.
+\end{itemize}
+
+\section{Education}
+\textbf{University of Wuppertal} \hfill 2022 -- 2027\\
+M.Sc. Computer Simulation
+
+\end{document}
+"""
+
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def open_resume_tab(page):
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector("#panel-resume:not([hidden])")
+
+
+def test_resume_editor_renders_the_source_and_keeps_files(page):
+    enter_profile(page)
+    open_resume_tab(page)
+
+    # The empty state offers the template built from the profile.
+    assert "No resume open" in page.locator("#resume-empty").inner_text()
+    page.click('#resume-empty [data-resume-action="new"]')
+    page.wait_for_selector("#resume-source:not([hidden])")
+    page.wait_for_selector(".resume-page .tex-section")
+    assert page.input_value("#resume-name") == "resume-1.tex"
+    assert page.locator(".resume-tabs .resume-tab").count() == 1
+    assert page.locator(".resume-rail .resume-file").count() == 1
+
+    page.fill("#resume-source", RESUME_SOURCE)
+    page.wait_for_function(
+        """() => {
+          const sections = Array.from(document.querySelectorAll('.resume-page .tex-section'));
+          return sections.length === 2 && sections[0].textContent === 'Experience';
+        }"""
+    )
+    page.wait_for_function("() => /^Saved \\d/.test(document.querySelector('#resume-status').textContent)")
+
+    # The commands the resume actually uses are rendered, not printed.
+    assert page.locator(".resume-page .tex-size-xlarge strong").inner_text() == "Test Person"
+    assert page.locator(".resume-page .tex-line.is-split .tex-right").first.inner_text() == "2024 – 2025"
+    assert "Built a particle model in C++." in page.locator(".resume-page ul li").first.inner_text()
+    assert page.locator("#resume-issues").is_hidden()
+
+    # A support file: uploaded, listed, and usable by \includegraphics.
+    page.set_input_files(
+        "#resume-file-input",
+        {"name": "profile.png", "mimeType": "image/png", "buffer": PNG_BYTES},
+    )
+    page.wait_for_selector(".resume-asset-name")
+    assert "profile.png" in page.locator(".resume-assets").inner_text()
+
+    page.fill(
+        "#resume-source",
+        RESUME_SOURCE.replace(
+            "test@example.com",
+            "test@example.com\n\\includegraphics[width=3cm]{profile.png}",
+        ),
+    )
+    page.wait_for_function(
+        "() => { const img = document.querySelector('.resume-page .tex-img'); return Boolean(img && img.complete && img.naturalWidth > 0); }"
+    )
+    assert page.evaluate("document.querySelector('.resume-page .tex-img').getAttribute('src')").endswith(
+        "/files/1"
+    )
+
+    # Both the source and the file survive a reload.
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    open_resume_tab(page)
+    page.wait_for_selector(".resume-asset-name")
+    assert "Built a particle model" in page.input_value("#resume-source")
+    assert page.locator(".resume-asset-name").first.inner_text().strip() == "profile.png"
+
+
+def test_a_job_gets_a_tailored_resume(page):
+    created = api_post(
+        page,
+        "/api/applications",
+        {"company": "Airbus", "role": "Frontend Engineer", "phase": "to_apply"},
+    )
+    assert created["status"] == 201
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#welcome-list [data-enter-profile]')"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    page.locator("#toapply-table-body tr").first.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+
+    page.click('#drawer [data-action="open-resume"]')
+    page.wait_for_selector("#panel-resume:not([hidden])")
+    page.wait_for_function(
+        "() => document.querySelector('#resume-name').value === 'airbus.tex'"
+    )
+    page.wait_for_selector("#drawer", state="hidden")
+    assert "Airbus — Frontend Engineer" in page.locator("#resume-preview-title").inner_text()
+    groups = [name.lower() for name in page.locator(".resume-rail-group h3").all_inner_texts()]
+    assert "tailored for jobs" in groups
+    # The tailored copy is a tab of its own next to the master it came from.
+    assert page.locator(".resume-tabs .resume-tab").count() >= 1
+    assert page.locator(".resume-page .tex-section").count() >= 3

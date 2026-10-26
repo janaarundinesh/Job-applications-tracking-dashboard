@@ -6,6 +6,7 @@ import { bulkDelete, bulkMarkApplied, closePosition, deleteDocument, loadApps, l
 import { closeModal, confirmEmptyTrash, confirmPurge, confirmTrash, extractFromLink, openModal, setModalMode, submitForm, syncPhaseFields } from "./dialogs.js";
 import { closeDrawer, closePreview, openDrawer, openPreview } from "./drawer.js";
 import { exportCSV, exportJSON, handleImportFile } from "./io.js";
+import { bindResumeEvents, openResumeForJob } from "./resume.js";
 import { closeNewProfile, closeProfiles, closeSettings, closeUnlock, createNewProfile, deleteCurrentProfile, downloadBackup, enterProfile, lockProfile, logoutProfile, openNewProfile, openProfiles, openSettings, removePin, savePin, saveSettings, selectProfile, showSettingsView, showWelcome, submitUnlock } from "./profiles.js";
 import { clearFilters, render, renderViewSwitch, renderWorkspace, setTab, syncFilterOptions } from "./workspace.js";
 import { installFocusManagement } from "./a11y.js";
@@ -14,6 +15,8 @@ import { registerServiceWorker, showOfflineScreen, syncThemeColor } from "./pwa.
 
 
 export function bindEvents() {
+  bindResumeEvents();
+
   // A tablist answers the arrow keys as well as the mouse.
   const tabs = $$(".tab");
   tabs.forEach((button, index) => {
@@ -182,6 +185,19 @@ export function bindEvents() {
     }
   });
 
+  // A job's resume button opens (or creates) that job's tailored copy.
+  document.addEventListener("click", async (event) => {
+    const resumeButton = event.target.closest('[data-action="open-resume"]');
+    if (!resumeButton) return;
+    event.stopPropagation();
+    const app = state.apps.find((item) => item.id === Number(resumeButton.dataset.id));
+    if (!app) return;
+    const doc = await openResumeForJob(app);
+    if (!doc) return;
+    closeDrawer();
+    setTab("resume");
+  });
+
   document.addEventListener("keydown", (event) => {
     const isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if (event.key === "Escape") {
@@ -205,7 +221,7 @@ export function bindEvents() {
       if (state.tab === "overview" || state.tab === "trash") setTab("applied");
       $("#search").focus();
     } else if (event.key === "n" || event.key === "N") {
-      if (event.metaKey || event.ctrlKey) return;
+      if (event.metaKey || event.ctrlKey || state.tab === "resume") return;
       event.preventDefault();
       openModal(null);
     }

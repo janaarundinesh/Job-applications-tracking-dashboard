@@ -4,6 +4,7 @@
 import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
 import { appsIn, renderProfileChrome, updateBulkBar, visibleApps } from "./data.js";
 import { renderOverview } from "./overview.js";
+import { renderResumePanel } from "./resume.js";
 
 
 export function render() {
@@ -12,6 +13,7 @@ export function render() {
   renderViewSwitch();
   renderOverview();
   renderWorkspace();
+  renderResumePanel();
   syncFilterOptions();
   syncDatalists();
   $("#last-updated").textContent = new Date().toLocaleDateString(undefined, {
@@ -51,12 +53,15 @@ export function renderTabs() {
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
   $("#panel-overview").hidden = state.tab !== "overview";
-  $("#workspace").hidden = state.tab === "overview";
+  $("#workspace").hidden = state.tab === "overview" || state.tab === "resume";
+  $("#panel-resume").hidden = state.tab !== "resume";
+  // The job-specific header actions make no sense on the resume tab.
+  document.body.classList.toggle("tab-resume", state.tab === "resume");
 }
 
 
 export function renderWorkspace() {
-  if (state.tab === "overview") return;
+  if (state.tab === "overview" || state.tab === "resume") return;
   const isToApply = state.tab === "to_apply";
   const isTrash = state.tab === "trash";
   const isApplied = state.tab === "applied";
