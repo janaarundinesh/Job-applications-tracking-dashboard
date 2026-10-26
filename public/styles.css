@@ -3511,3 +3511,14 @@ html.is-offline .welcome { display: none; }
 }
 
 .tex-center .tex-img { display: inline-block; margin: 0 auto 4px; }
+
+/* resume match column */
+
+.apps-table thead th.match-col { width: 74px; white-space: nowrap; }
+.match-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.match-cell.is-high { color: var(--accent-strong); font-weight: 600; }
+.match-cell.is-empty { color: var(--text-faint); }

@@ -1,7 +1,7 @@
 /* Job Pipeline — The Applied / To apply / Trash workspace: table, board and filters.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
+import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
 import { appsIn, renderProfileChrome, updateBulkBar, visibleApps } from "./data.js";
 import { renderOverview } from "./overview.js";
 import { renderResumePanel } from "./resume.js";
@@ -225,7 +225,6 @@ export function appliedRow(app) {
     '<td class="company-cell">' +
     '<div class="company-name">' + esc(app.company) +
     (review ? '<span class="review-flag" title="Applied ' + daysSince(app.applied_on) + ' days ago — check whether this role is still open">Review</span>' : "") +
-    matchBadge(app) +
     "</div>" +
     (meta ? '<div class="company-meta">' + esc(meta) + "</div>" : "") +
     "</td>" +
@@ -239,6 +238,7 @@ export function appliedRow(app) {
     '<td><span class="source-chip' + (app.source ? "" : " is-empty") + '">' +
     esc(app.source || "—") + "</span></td>" +
     '<td class="salary-cell">' + esc(app.salary || "—") + "</td>" +
+    matchCell(app) +
     '<td class="actions-col"><div class="row-actions">' +
     '<button type="button" data-action="edit" data-id="' + app.id + '" title="Edit" aria-label="Edit ' + esc(app.company) + '">' + ICON.pencil + "</button>" +
     '<button type="button" class="danger" data-action="delete" data-id="' + app.id + '" title="Move to trash" aria-label="Move ' + esc(app.company) + ' to trash">' + ICON.trash + "</button>" +
@@ -258,7 +258,7 @@ export function toApplyRow(app) {
     (state.selection.has(app.id) ? " checked" : "") +
     ' aria-label="Select ' + esc(app.company) + " " + esc(app.role) + '" /></td>' +
     '<td class="company-cell">' +
-    '<div class="company-name">' + esc(app.company) + matchBadge(app) + "</div>" +
+    '<div class="company-name">' + esc(app.company) + "</div>" +
     (meta ? '<div class="company-meta">' + esc(meta) + "</div>" : "") +
     "</td>" +
     '<td class="role-cell" title="' + esc(app.role) + '">' + esc(app.role) + "</td>" +
@@ -267,6 +267,7 @@ export function toApplyRow(app) {
     '<td><span class="source-chip' + (app.source ? "" : " is-empty") + '">' +
     esc(app.source || "—") + "</span></td>" +
     '<td class="salary-cell">' + esc(app.salary || "—") + "</td>" +
+    matchCell(app) +
     '<td class="next-cell">' + (nextStep
       ? '<span class="step-text">' + esc(nextStep) + "</span>" +
         (app.next_step_on
@@ -302,6 +303,18 @@ export function trashRow(app) {
     '<button type="button" class="restore" data-action="restore" data-id="' + app.id + '" title="Restore" aria-label="Restore ' + esc(app.company) + '">' + ICON.restore + "</button>" +
     '<button type="button" class="danger" data-action="purge" data-id="' + app.id + '" title="Delete permanently" aria-label="Delete ' + esc(app.company) + ' permanently">' + ICON.trash + "</button>" +
     "</div></td></tr>"
+  );
+}
+
+
+function matchCell(app) {
+  const pct = matchPct(app);
+  if (pct === null) {
+    return '<td class="match-cell is-empty" title="No match estimate saved">—</td>';
+  }
+  return (
+    '<td class="match-cell' + (pct >= 80 ? " is-high" : "") + '"' +
+    ' title="Estimated match with your resume">' + pct + "%</td>"
   );
 }
 
@@ -399,9 +412,14 @@ export function syncFilterOptions() {
   $("#filter-source").value = state.filters.source;
   $("#filter-status").value = state.filters.status;
   $("#filter-mode").value = state.filters.mode;
+  $("#filter-match").value = state.filters.match;
   if ($("#search").value !== state.filters.q) $("#search").value = state.filters.q;
   $("#clear-filters").hidden = !(
-    state.filters.q || state.filters.status || state.filters.mode || state.filters.source
+    state.filters.q ||
+    state.filters.status ||
+    state.filters.mode ||
+    state.filters.source ||
+    state.filters.match
   );
 }
 
@@ -422,10 +440,11 @@ export function syncDatalists() {
 
 
 export function clearFilters() {
-  state.filters = { q: "", status: "", mode: "", source: "" };
+  state.filters = { q: "", status: "", mode: "", source: "", match: "" };
   $("#search").value = "";
   $("#filter-status").value = "";
   $("#filter-mode").value = "";
   $("#filter-source").value = "";
+  $("#filter-match").value = "";
   render();
 }

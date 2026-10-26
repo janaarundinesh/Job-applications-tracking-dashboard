@@ -1,7 +1,7 @@
 /* Job Pipeline — Loading, filtering and mutating data (jobs, documents, bulk actions).
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, CLOSED, DEFAULT_GOALS, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, isoOf, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
+import { $, CLOSED, DEFAULT_GOALS, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
 import { confirmAction } from "./dialogs.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { openUnlock } from "./profiles.js";
@@ -63,13 +63,27 @@ export function appsIn(phase) {
 }
 
 
+function inMatchBand(band, app) {
+  if (!band) return true;
+  const pct = matchPct(app);
+  if (band === "none") return pct === null;
+  if (pct === null) return false;
+  if (band === "under40") return pct < 40;
+  if (band === "80") return pct >= 80;
+  if (band === "60") return pct >= 60 && pct < 80;
+  if (band === "40") return pct >= 40 && pct < 60;
+  return true;
+}
+
+
 export function visibleApps(phase) {
   const query = state.filters.q.trim().toLowerCase();
-  const { status, mode, source } = state.filters;
+  const { status, mode, source, match } = state.filters;
   const list = appsIn(phase).filter((app) => {
     if (phase === "applied" && status && app.status !== status) return false;
     if (mode && app.work_mode !== mode) return false;
     if (source && app.source !== source) return false;
+    if (!inMatchBand(match, app)) return false;
     if (!query) return true;
     return [app.company, app.role, app.location, app.source, app.notes, app.description, app.next_step, app.contact_name]
       .join(" ")
@@ -83,6 +97,18 @@ export function visibleApps(phase) {
 export function sortApps(list, sort) {
   const { key, dir } = sort;
   const factor = dir === "asc" ? 1 : -1;
+  if (key === "match_pct") {
+    // A job with no estimate is not a low match: it always sinks to the end.
+    return list.slice().sort((a, b) => {
+      const left = matchPct(a);
+      const right = matchPct(b);
+      if (left === null && right === null) return b.id - a.id;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      if (left !== right) return (left - right) * factor;
+      return b.id - a.id;
+    });
+  }
   return list.slice().sort((a, b) => {
     const left = a[key] == null ? "" : String(a[key]);
     const right = b[key] == null ? "" : String(b[key]);

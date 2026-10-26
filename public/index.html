@@ -235,6 +235,14 @@
         <select id="filter-source" class="select" aria-label="Filter by source">
           <option value="">Any source</option>
         </select>
+        <select id="filter-match" class="select" aria-label="Filter by resume match">
+          <option value="">Any match</option>
+          <option value="80">Match 80% and above</option>
+          <option value="60">Match 60–79%</option>
+          <option value="40">Match 40–59%</option>
+          <option value="under40">Match below 40%</option>
+          <option value="none">No match estimate</option>
+        </select>
         <button class="btn btn-ghost" id="clear-filters" hidden>Clear</button>
       </div>
       <div class="toolbar" id="trash-toolbar" hidden>
@@ -257,6 +265,7 @@
             <th>Next step</th>
             <th class="sortable" data-sort="source">Source</th>
             <th class="sortable" data-sort="salary">Salary</th>
+            <th class="sortable match-col" data-sort="match_pct" title="Estimated match with your resume">Match</th>
             <th class="actions-col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -283,6 +292,7 @@
             <th class="sortable" data-sort="created_at">Saved</th>
             <th class="sortable" data-sort="source">Source</th>
             <th class="sortable" data-sort="salary">Salary</th>
+            <th class="sortable match-col" data-sort="match_pct" title="Estimated match with your resume">Match</th>
             <th>Next step</th>
             <th class="actions-col"><span class="sr-only">Actions</span></th>
           </tr>

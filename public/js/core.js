@@ -73,7 +73,7 @@ export const state = {
     applied: { key: "applied_on", dir: "desc" },
     to_apply: { key: "created_at", dir: "desc" },
   },
-  filters: { q: "", status: "", mode: "", source: "" },
+  filters: { q: "", status: "", mode: "", source: "", match: "" },
   modalMode: "manual",
   drawerId: null,
   drawerEvents: [],

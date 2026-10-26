@@ -100,7 +100,7 @@ def test_importing_postings_without_a_status_saves_them_to_apply(page):
     page.wait_for_selector("#toapply-table-body tr")
     row = page.locator("#toapply-table-body tr").first
     assert "Airbus" in row.inner_text()
-    assert "72% match" in row.inner_text().lower()
+    assert row.locator(".match-cell").inner_text().strip() == "72%"
 
     row.click()
     page.wait_for_selector("#drawer:not([hidden])")
@@ -137,7 +137,7 @@ def test_importing_postings_without_a_status_saves_them_to_apply(page):
     assert page.locator("#count-toapply").inner_text() == "2"
     assert page.locator("#count-applied").inner_text() == "0"
     globex = page.locator("#toapply-table-body tr", has_text="Globex")
-    assert "65% match" in globex.inner_text().lower()
+    assert globex.locator(".match-cell").inner_text().strip() == "65%"
     globex.click()
     page.wait_for_selector("#drawer:not([hidden])")
     page.wait_for_selector("#drawer-notes")
@@ -495,3 +495,82 @@ def test_a_job_gets_a_tailored_resume(page):
     # The tailored copy is a tab of its own next to the master it came from.
     assert page.locator(".resume-tabs .resume-tab").count() >= 1
     assert page.locator(".resume-page .tex-section").count() >= 3
+
+
+def test_jobs_sort_and_filter_by_resume_match(page):
+    for company, pct in (
+        ("Below Forty Co", 25),
+        ("Forty Band Co", 45),
+        ("Sixty Band Co", 65),
+        ("High Match Co", 88),
+        ("Unscored Co", None),
+    ):
+        payload = {"company": company, "role": "Engineer", "phase": "to_apply"}
+        if pct is not None:
+            payload["match_pct"] = pct
+        assert api_post(page, "/api/applications", payload)["status"] == 201
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+
+    def companies():
+        return [name.strip() for name in page.locator("#toapply-table-body tr .company-name").all_inner_texts()]
+
+    header = page.locator('#toapply-table-shell th[data-sort="match_pct"]')
+    assert header.count() == 1
+    assert header.inner_text().strip().lower() == "match"
+
+    # Highest match first, and a job with no estimate never pretends to be low.
+    header.click()
+    assert header.get_attribute("aria-sort") == "descending"
+    assert companies() == [
+        "High Match Co",
+        "Sixty Band Co",
+        "Forty Band Co",
+        "Below Forty Co",
+        "Unscored Co",
+    ]
+    assert [
+        value.strip() for value in page.locator("#toapply-table-body .match-cell").all_inner_texts()
+    ] == ["88%", "65%", "45%", "25%", "—"]
+
+    header.click()
+    assert header.get_attribute("aria-sort") == "ascending"
+    assert companies()[-1] == "Unscored Co"
+    assert companies()[0] == "Below Forty Co"
+
+    # The match column replaced the chip beside the company name.
+    assert "88%" not in page.locator("#toapply-table-body tr .company-name").last.inner_text()
+
+    page.select_option("#filter-match", "80")
+    assert companies() == ["High Match Co"]
+    page.select_option("#filter-match", "60")
+    assert companies() == ["Sixty Band Co"]
+    page.select_option("#filter-match", "40")
+    assert companies() == ["Forty Band Co"]
+    page.select_option("#filter-match", "under40")
+    assert companies() == ["Below Forty Co"]
+    page.select_option("#filter-match", "none")
+    assert companies() == ["Unscored Co"]
+
+    # The extra column still fits the table at this width.
+    assert page.evaluate(
+        """() => {
+          const shell = document.querySelector('#toapply-table-shell');
+          return shell.scrollWidth <= shell.clientWidth + 1;
+        }"""
+    )
+
+    # The filter is shared with the Applied table, which has the same column.
+    assert page.locator('#applied-table-shell th[data-sort="match_pct"]').count() == 1
+    assert page.locator("#clear-filters").is_visible()
+    page.click("#clear-filters")
+    assert page.locator("#filter-match").input_value() == ""
+    assert len(companies()) == 5
+    assert page.locator("#clear-filters").is_hidden()

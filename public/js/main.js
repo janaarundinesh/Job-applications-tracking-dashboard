@@ -436,7 +436,8 @@ export function bindEvents() {
         sort.dir = sort.dir === "asc" ? "desc" : "asc";
       } else {
         sort.key = key;
-        sort.dir = key === "applied_on" || key === "created_at" ? "desc" : "asc";
+        // Dates and the match estimate read best highest/newest first.
+        sort.dir = ["applied_on", "created_at", "match_pct"].includes(key) ? "desc" : "asc";
       }
       renderWorkspace();
     };
@@ -454,7 +455,7 @@ export function bindEvents() {
     syncFilterOptions();
   });
 
-  ["status", "mode", "source"].forEach((key) => {
+  ["status", "mode", "source", "match"].forEach((key) => {
     const select = $("#filter-" + key);
     select.addEventListener("change", (event) => {
       state.filters[key] = event.target.value;
