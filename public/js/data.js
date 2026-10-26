@@ -412,11 +412,58 @@ export function readFileBase64(file) {
 }
 
 
+/* Apply a list of { id, payload } one by one, keeping local state in step. */
+async function patchEach(changes) {
+  let done = 0;
+  let failed = 0;
+  for (const change of changes) {
+    try {
+      const updated = await api("/api/applications/" + change.id, {
+        method: "PATCH",
+        body: JSON.stringify(change.payload),
+      });
+      const index = state.apps.findIndex((item) => item.id === change.id);
+      if (index === -1) state.apps.push(updated);
+      else state.apps[index] = updated;
+      done += 1;
+    } catch (error) {
+      failed += 1;
+    }
+  }
+  return { done, failed };
+}
+
+
+/* Offer a way back from a bulk change while the toast is still on screen. */
+function offerUndo(message, isError, changes) {
+  toast(
+    message,
+    isError,
+    undefined,
+    changes.length
+      ? {
+          label: "Undo",
+          onClick: async () => {
+            const result = await patchEach(changes);
+            render();
+            if (result.failed) {
+              toast("Could not undo every job — " + result.failed + " failed", true);
+              return;
+            }
+            toast("Undone");
+          },
+        }
+      : undefined
+  );
+}
+
+
 export async function bulkMarkApplied() {
   const ids = Array.from(state.selection);
   if (!ids.length) return;
   const button = $("#bulk-apply");
   button.disabled = true;
+  const changes = [];
   let done = 0;
   let failed = 0;
   for (const id of ids) {
@@ -435,6 +482,11 @@ export async function bulkMarkApplied() {
       const index = state.apps.findIndex((item) => item.id === id);
       if (index === -1) state.apps.push(updated);
       else state.apps[index] = updated;
+      // Sending it was the change; undoing puts it back under To apply.
+      changes.push({
+        id,
+        payload: { phase: "to_apply", status: "applied", applied_on: "" },
+      });
       done += 1;
     } catch (error) {
       failed += 1;
@@ -443,9 +495,11 @@ export async function bulkMarkApplied() {
   state.selection.clear();
   button.disabled = false;
   render();
-  toast(
+  offerUndo(
     done + " job" + (done === 1 ? "" : "s") + " marked as applied" +
-      (failed ? " — " + failed + " failed" : "")
+      (failed ? " — " + failed + " failed" : ""),
+    false,
+    changes
   );
 }
 
@@ -461,9 +515,12 @@ export async function bulkSetStatus() {
     button.disabled = true;
     button.textContent = "Saving…";
   }
+  const changes = [];
   let done = 0;
   let failed = 0;
   for (const id of ids) {
+    const app = state.apps.find((item) => item.id === id);
+    const previousStatus = app ? app.status : null;
     try {
       const updated = await api("/api/applications/" + id, {
         method: "PATCH",
@@ -472,6 +529,7 @@ export async function bulkSetStatus() {
       const index = state.apps.findIndex((item) => item.id === id);
       if (index === -1) state.apps.push(updated);
       else state.apps[index] = updated;
+      if (previousStatus) changes.push({ id, payload: { status: previousStatus } });
       done += 1;
     } catch (error) {
       failed += 1;
@@ -481,9 +539,11 @@ export async function bulkSetStatus() {
   if (button) button.textContent = label;
   if (select) select.value = "";
   render();
-  toast(
+  offerUndo(
     done + " job" + (done === 1 ? "" : "s") + " moved to " + STATUS_LABEL[status] +
-      (failed ? " — " + failed + " failed" : "")
+      (failed ? " — " + failed + " failed" : ""),
+    false,
+    changes
   );
 }
 

@@ -466,17 +466,41 @@ export async function request(path, options) {
 }
 
 
-export function toast(message, isError, variant) {
+export function toast(message, isError, variant, action) {
   const container = $("#toasts");
   const element = document.createElement("div");
   element.className = "toast" + (isError ? " is-error" : "") + (variant ? " is-" + variant : "");
-  element.textContent = message;
-  container.appendChild(element);
-  while (container.children.length > 3) container.firstElementChild.remove();
-  window.setTimeout(() => {
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = message;
+  element.appendChild(text);
+  let timer = null;
+  const dismiss = () => {
+    window.clearTimeout(timer);
+    if (element.classList.contains("is-leaving")) return;
     element.classList.add("is-leaving");
     window.setTimeout(() => element.remove(), 200);
-  }, 2600);
+  };
+  if (action && action.onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = action.label || "Undo";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      dismiss();
+      try {
+        await action.onClick();
+      } catch (error) {
+        toast(error.message || "Could not undo that", true);
+      }
+    });
+    element.appendChild(button);
+  }
+  container.appendChild(element);
+  while (container.children.length > 3) container.firstElementChild.remove();
+  // An offer to undo needs to be readable and reachable before it disappears.
+  timer = window.setTimeout(dismiss, action ? 8000 : 2600);
 }
 
 

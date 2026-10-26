@@ -2523,6 +2523,22 @@ html.is-welcome .page { display: none; }
   backdrop-filter: blur(26px) saturate(180%);
   animation: toast-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+.toast-action {
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+  /* The toast stack ignores the pointer; its button opts back in. */
+  pointer-events: auto;
+}
+.toast-action:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.toast-action:disabled { opacity: 0.6; cursor: default; }
 .toast::before {
   content: "";
   width: 6px;

@@ -675,9 +675,28 @@ def test_applied_bulk_bar_moves_several_jobs_to_a_stage(page):
     page.click("#bulk-stage-apply")
     page.wait_for_selector("#bulk-bar", state="hidden")
 
-    assert page.evaluate(
-        "() => Array.from(document.querySelectorAll('#applied-table-body .stage-select')).map((s) => s.value)"
-    ) == ["interview", "interview", "interview"]
+    def stages():
+        return page.evaluate(
+            "() => Array.from(document.querySelectorAll('#applied-table-body .stage-select')).map((s) => s.value)"
+        )
+
+    assert stages() == ["interview", "interview", "interview"]
+
+    # A wrong stage move is reversible while the toast is still up.
+    undo = page.locator("#toasts .toast-action")
+    assert undo.count() == 1
+    assert undo.inner_text() == "Undo"
+    undo.click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#applied-table-body .stage-select[data-status=\"applied\"]').length === 3"
+    )
+    assert stages() == ["applied", "applied", "applied"]
+    assert "Undone" in page.locator("#toasts").inner_text()
+
+    page.check("#select-all-applied")
+    page.select_option("#bulk-status", "interview")
+    page.click("#bulk-stage-apply")
+    page.wait_for_selector("#bulk-bar", state="hidden")
     # The stage filter and the overview funnel follow the move.
     page.select_option("#filter-status", "interview")
     assert page.locator("#applied-table-body tr").count() == 3
@@ -688,3 +707,40 @@ def test_applied_bulk_bar_moves_several_jobs_to_a_stage(page):
     page.check("#select-all-applied")
     assert page.input_value("#bulk-status") == ""
     assert page.locator("#bulk-stage-apply").is_disabled()
+
+
+def test_marking_saved_jobs_applied_can_be_undone(page):
+    for company in ("Alpha Co", "Beta Co"):
+        assert (
+            api_post(
+                page,
+                "/api/applications",
+                {"company": company, "role": "Engineer", "phase": "to_apply"},
+            )["status"]
+            == 201
+        )
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+
+    page.check("#select-all-toapply")
+    page.click("#bulk-apply")
+    page.wait_for_function("() => document.querySelector('#count-applied').textContent === '2'")
+    assert page.locator("#count-toapply").inner_text() == "0"
+
+    undo = page.locator("#toasts .toast-action")
+    assert undo.inner_text() == "Undo"
+    undo.click()
+    page.wait_for_function("() => document.querySelector('#count-toapply').textContent === '2'")
+    assert page.locator("#count-applied").inner_text() == "0"
+    page.wait_for_selector("#toapply-table-body tr")
+    assert page.locator("#toapply-table-body tr").count() == 2
+    assert page.input_value("#filter-status") == ""
+    # The undoing is itself reported, and the undo offer is gone with the toast.
+    assert "Undone" in page.locator("#toasts").inner_text()
