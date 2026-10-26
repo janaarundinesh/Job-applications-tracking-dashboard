@@ -1,7 +1,7 @@
 /* Job Pipeline — The Applied / To apply / Trash workspace: table, board and filters.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
+import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, matchBand, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
 import { appsIn, renderProfileChrome, updateBulkBar, visibleApps } from "./data.js";
 import { renderOverview } from "./overview.js";
 import { renderResumePanel } from "./resume.js";
@@ -323,8 +323,9 @@ function matchCell(app) {
   if (pct === null) {
     return '<td class="match-cell is-empty" title="No match estimate saved">—</td>';
   }
+  const band = matchBand(pct);
   return (
-    '<td class="match-cell' + (pct >= 80 ? " is-high" : "") + '"' +
+    '<td class="match-cell' + (band ? " is-" + band : "") + '"' +
     ' title="Estimated match with your resume">' + pct + "%</td>"
   );
 }

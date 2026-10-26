@@ -274,12 +274,28 @@ export function matchPct(app) {
 }
 
 
+/**
+ * Which colour band a match estimate belongs to. The filter dropdown cuts the
+ * same way (80+, 60–79, 40–59, below 40), so the colour of a number and the
+ * band that hides it always agree.
+ */
+export function matchBand(pct) {
+  if (pct === null || pct === undefined) return "";
+  if (pct >= 80) return "high";
+  if (pct >= 60) return "good";
+  if (pct >= 40) return "fair";
+  return "low";
+}
+
+
 /** The saved estimate of how well this posting matches the resume, if any. */
 export function matchBadge(app, extraClass) {
   const pct = matchPct(app);
   if (pct === null) return "";
+  const band = matchBand(pct);
   return (
-    '<span class="match-badge' + (extraClass ? " " + extraClass : "") +
+    '<span class="match-badge' + (band ? " is-" + band : "") +
+    (extraClass ? " " + extraClass : "") +
     '" title="Estimated match with your resume">' + pct + "% match</span>"
   );
 }

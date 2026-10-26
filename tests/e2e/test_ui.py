@@ -555,6 +555,50 @@ def test_jobs_sort_and_filter_by_resume_match(page):
         value.strip() for value in page.locator("#toapply-table-body .match-cell").all_inner_texts()
     ] == ["88%", "65%", "45%", "25%", "—"]
 
+    # Each number is coloured by its band — the same cuts the filter uses — and
+    # the colour comes from the band token, so both themes stay in step.
+    cells = page.locator("#toapply-table-body .match-cell")
+    assert [cells.nth(index).get_attribute("class") for index in range(5)] == [
+        "match-cell is-high",
+        "match-cell is-good",
+        "match-cell is-fair",
+        "match-cell is-low",
+        "match-cell is-empty",
+    ]
+    tones = page.evaluate(
+        """() => [...document.querySelectorAll('#toapply-table-body .match-cell')]
+             .map((cell) => getComputedStyle(cell).color)"""
+    )
+    assert len(set(tones[:4])) == 4
+    # The em dash keeps the faint default rather than pretending to be a band.
+    assert tones[4] not in tones[:4]
+    assert page.evaluate(
+        """() => {
+          const root = getComputedStyle(document.documentElement);
+          const resolve = (name) => {
+            const probe = document.createElement('span');
+            probe.style.color = root.getPropertyValue(name).trim();
+            document.body.appendChild(probe);
+            const color = getComputedStyle(probe).color;
+            probe.remove();
+            return color;
+          };
+          const fromTokens = ['--match-high', '--match-good', '--match-fair', '--match-low'].map(resolve);
+          const onScreen = [...document.querySelectorAll('#toapply-table-body .match-cell')]
+            .slice(0, 4).map((cell) => getComputedStyle(cell).color);
+          return fromTokens.join('|') === onScreen.join('|');
+        }"""
+    )
+
+    # The drawer carries the same colour in its chip and its detail row.
+    page.locator("#toapply-table-body tr", has_text="High Match Co").click()
+    page.wait_for_selector("#drawer.is-open")
+    assert "match-badge is-high" in page.locator("#drawer .match-badge").get_attribute("class")
+    assert (page.locator("#drawer .match-value").get_attribute("class") == "match-value is-high"
+            and page.locator("#drawer .match-value").inner_text().strip() == "88%")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#drawer", state="hidden")
+
     header.click()
     assert header.get_attribute("aria-sort") == "ascending"
     assert companies()[-1] == "Unscored Co"
@@ -805,6 +849,39 @@ def test_long_values_do_not_push_the_match_column_off_screen(page):
           return cell.getBoundingClientRect().height < 24;
         }"""
     )
+
+
+def test_a_job_closed_while_it_opens_still_closes(page):
+    """A close that lands before the drawer's opening frame must win.
+
+    Opening schedules a frame that adds the `is-open` class; if the drawer is
+    closed first, that frame used to put the class back and the closing timeout
+    then refused to hide a drawer it saw as open — the panel stayed on screen.
+    """
+    assert api_post(
+        page,
+        "/api/applications",
+        {"company": "Fast Close Co", "role": "Engineer", "phase": "to_apply"},
+    )["status"] == 201
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+
+    page.evaluate(
+        """() => {
+          // Both in one task, so the opening frame has not run when Escape closes
+          // it — the interleaving a quick click-then-Escape produces.
+          document.querySelector('#toapply-table-body tr').click();
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        }"""
+    )
+    page.wait_for_selector("#drawer", state="hidden", timeout=2000)
+    assert page.locator("#drawer").get_attribute("class") == "drawer"
 
 
 def test_resume_editor_uses_the_whole_window(page):

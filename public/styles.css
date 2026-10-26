@@ -44,6 +44,11 @@
   --st-offer: #34d399;
   --st-rejected: #f87171;
   --st-withdrawn: #94a3b8;
+  /* resume-match bands: 80+ / 60–79 / 40–59 / below 40, same cuts as the filter */
+  --match-high: #34d399;
+  --match-good: #a3b1ff;
+  --match-fair: #fbbf24;
+  --match-low: #f87171;
 }
 
 [data-theme="light"] {
@@ -89,6 +94,10 @@
   --st-offer: #059669;
   --st-rejected: #dc2626;
   --st-withdrawn: #64748b;
+  --match-high: #059669;
+  --match-good: #3a4ed4;
+  --match-fair: #b45309;
+  --match-low: #dc2626;
 }
 
 * { box-sizing: border-box; }
@@ -1148,6 +1157,7 @@ kbd {
 .review-flag.is-card { margin-left: 0; font-size: 9px; padding: 1px 5px; }
 
 .match-badge {
+  --match-tone: var(--accent-strong);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1157,14 +1167,18 @@ kbd {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--match-tone);
+  background: color-mix(in srgb, var(--match-tone) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--match-tone) 32%, transparent);
   border-radius: 99px;
   vertical-align: middle;
   white-space: nowrap;
 }
 .match-badge.is-card { margin-left: 0; font-size: 9px; padding: 1px 5px; }
+.match-badge.is-high { --match-tone: var(--match-high); }
+.match-badge.is-good { --match-tone: var(--match-good); }
+.match-badge.is-fair { --match-tone: var(--match-fair); }
+.match-badge.is-low { --match-tone: var(--match-low); }
 
 .role-cell { max-width: 230px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -3664,7 +3678,16 @@ body.tab-resume .resume-view {
 .match-cell {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
   color: var(--text-dim);
 }
-.match-cell.is-high { color: var(--accent-strong); font-weight: 600; }
-.match-cell.is-empty { color: var(--text-faint); }
+.match-cell.is-high,
+.match-value.is-high { color: var(--match-high); }
+.match-cell.is-good,
+.match-value.is-good { color: var(--match-good); }
+.match-cell.is-fair,
+.match-value.is-fair { color: var(--match-fair); }
+.match-cell.is-low,
+.match-value.is-low { color: var(--match-low); }
+.match-cell.is-empty { color: var(--text-faint); font-weight: 400; }
+.match-value { font-weight: 600; font-variant-numeric: tabular-nums; }

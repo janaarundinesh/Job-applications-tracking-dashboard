@@ -1,7 +1,7 @@
 /* Job Pipeline — The job detail drawer, its documents and the document preview.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
+import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchBand, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
 import { updateLocal } from "./data.js";
 
 
@@ -26,6 +26,9 @@ export async function openDrawer(id) {
   if (initialBody) initialBody.scrollTop = scrollTop;
   wireNotes(app);
   requestAnimationFrame(() => {
+    // A close (or another job) that landed before this frame must not be undone
+    // by it: the drawer would stay open and never hide again.
+    if (state.drawerId !== id) return;
     drawer.classList.add("is-open");
     scrim.classList.add("is-open");
   });
@@ -58,6 +61,7 @@ export function drawerHTML(app, events, documents) {
   const saved = app.phase === "to_apply";
   const review = needsReview(app);
   const meta = [app.location, MODE_LABEL[app.work_mode] || ""].filter(Boolean);
+  const pct = matchPct(app);
   const detail = (label, value, extra) => {
     const content = value ? extra || esc(value) : '<span class="is-empty">Not set</span>';
     return '<div class="kv"><dt>' + esc(label) + "</dt><dd" + (value ? "" : ' class="is-empty"') + ">" + content + "</dd></div>";
@@ -173,8 +177,11 @@ export function drawerHTML(app, events, documents) {
     (app.reviewed_at ? detail("Last reviewed", fmtDate(app.reviewed_at)) : "") +
     detail(
       "Resume match",
-      matchPct(app) === null ? "" : matchPct(app) + "%",
-      matchPct(app) === null ? "" : esc(matchPct(app) + "%") + '<span class="kv-hint">estimated fit with your resume</span>'
+      pct === null ? "" : pct + "%",
+      pct === null
+        ? ""
+        : '<span class="match-value is-' + matchBand(pct) + '">' + esc(pct + "%") +
+          '</span><span class="kv-hint">estimated fit with your resume</span>'
     ) +
     detail("Location type", MODE_LABEL[app.work_mode]) +
     detail("Source", app.source) +
