@@ -1073,6 +1073,19 @@ def test_every_tab_uses_the_whole_window(page):
     """A wide monitor must not leave blank strips down either side of any tab."""
     page.set_viewport_size({"width": 1650, "height": 900})
     enter_profile(page)
+    for company in ("Airbus Defence and Space", "XTENDED ENGINEERING GMBH"):
+        created = api_post(
+            page,
+            "/api/applications",
+            {"company": company, "role": "Simulation Developer", "match_pct": 72},
+        )
+        assert created["status"] == 201
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
     for tab in ("overview", "to_apply", "applied", "resume", "trash"):
         page.click('[data-tab="%s"]' % tab)
         page.wait_for_timeout(200)
@@ -1089,6 +1102,41 @@ def test_every_tab_uses_the_whole_window(page):
         )
         assert edges == [0, 1650, 0, 1650], tab
         assert page.evaluate("() => document.documentElement.scrollWidth") == 1650, tab
+
+    # All that room must not be spent pushing every column apart: the compact
+    # ones keep their width and the text columns share the rest.
+    page.click('[data-tab="applied"]')
+    page.wait_for_selector("#applied-table-body tr")
+    columns = page.evaluate(
+        """() => {
+          const table = document.querySelector('#applied-table-shell table');
+          const width = (name) =>
+            Math.round(table.querySelector('thead th.' + name).getBoundingClientRect().width);
+          const headers = [...table.querySelectorAll('thead th')];
+          return {
+            layout: getComputedStyle(table).tableLayout,
+            select: width('select-col'), stage: width('stage-col'), date: width('date-col'),
+            link: width('link-col'), actions: width('actions-col'), match: width('match-col'),
+            company: width('company-col'), role: width('role-col'),
+            source: width('source-col'), salary: width('salary-col'),
+            table: Math.round(table.getBoundingClientRect().width),
+            sum: headers.reduce((total, th) => total + th.getBoundingClientRect().width, 0),
+          };
+        }"""
+    )
+    assert columns["layout"] == "fixed"
+    assert (columns["select"], columns["link"], columns["actions"]) == (44, 64, 88)
+    assert (columns["stage"], columns["date"]) == (176, 132)
+    assert columns["match"] == 74
+    assert columns["company"] > 200, columns
+    assert columns["company"] == columns["role"] == columns["source"] == columns["salary"], columns
+    assert abs(columns["sum"] - columns["table"]) < 2, columns
+    # The widest company name gets the whole cell instead of stopping at a cap.
+    name = page.evaluate(
+        "() => { const el = document.querySelector('#applied-table-body .company-name');"
+        " return [Math.round(el.getBoundingClientRect().width), el.scrollWidth]; }"
+    )
+    assert name[0] > 200, name
 
 
 def test_compile_shows_a_real_pdf_and_falls_back_on_tex_errors(page):

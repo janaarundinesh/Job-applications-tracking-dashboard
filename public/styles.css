@@ -3821,3 +3821,27 @@ body.tab-resume .resume-view {
 .match-value.is-low { color: var(--match-low); }
 .match-cell.is-empty { color: var(--text-faint); font-weight: 400; }
 .match-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* A wide window has room to spare, and a plain table spends it by pushing every
+   column apart. From this width the table lays out to fixed columns: the compact
+   ones (checkbox, stage, date, link, match, actions) hold the width their
+   content needs, and the four text columns — company, role, source, salary —
+   share what is left, filling it instead of stopping at a fixed cap. Narrower
+   windows keep the natural layout, where the table is only as wide as it needs. */
+@media (min-width: 1440px) {
+  .apps-table { table-layout: fixed; }
+  .apps-table .select-col { width: 44px; }
+  .apps-table .stage-col { width: 176px; }
+  .apps-table .status-col { width: 176px; }
+  .apps-table .date-col { width: 132px; }
+  .apps-table .link-col { width: 64px; }
+  .apps-table .match-col { width: 88px; }
+  .apps-table .actions-col { width: 88px; }
+  /* The text columns now run to the column edge, where the ellipsis catches them. */
+  .apps-table .company-cell,
+  .apps-table .role-cell { max-width: none; }
+  .apps-table .source-chip { max-width: 100%; }
+  .apps-table .salary-cell,
+  .apps-table .salary-cell span { max-width: 100%; }
+  .apps-table .link-cell .link-plain { max-width: 100%; }
+}
