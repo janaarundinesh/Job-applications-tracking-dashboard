@@ -51,6 +51,25 @@ def test_picker_opens_the_dashboard(page):
     assert "No applications yet" in page.locator("#applied-empty").inner_text()
 
 
+def test_no_profile_list_shows_a_job_count(page):
+    """The picker and the switch-profile dialog name profiles, not their data."""
+    assert api_post(
+        page,
+        "/api/applications",
+        {"company": "Counted Co", "role": "Engineer", "phase": "to_apply"},
+    )["status"] == 201
+    enter_profile(page)
+
+    page.click("#profile-btn")
+    page.wait_for_selector("#profiles-backdrop:not([hidden])")
+    assert page.locator("#profile-list .profile-row").count() == 1
+    metas = page.locator("#profile-list .profile-row-meta").all_inner_texts()
+    assert metas and all("job" not in text.lower() for text in metas)
+    page.click("#profiles-done")
+    page.wait_for_selector("#profiles-backdrop", state="hidden")
+
+
+
 def test_add_application_shows_up_in_the_table(page):
     enter_profile(page)
     page.click("#new-btn")

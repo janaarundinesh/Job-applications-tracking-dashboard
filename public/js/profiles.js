@@ -18,13 +18,13 @@ export function renderProfilesList() {
   list.innerHTML = state.profiles
     .map((profile) => {
       const active = profile.id === state.profileId;
-      const jobs = profile.jobs || 0;
       const open = profile.locked && !!tokenFor(profile.id);
-      const detail = profile.locked
+      // Like the picker, this list names profiles and stops there: a job count
+      // says nothing about who you are switching to, and for a locked profile
+      // it would give away what the PIN is there to guard.
+      const meta = profile.locked
         ? "PIN protected"
         : profile.headline || profile.email || "No contact details yet";
-      const meta =
-        detail + " · " + (jobs ? jobs + " job" + (jobs === 1 ? "" : "s") : "no jobs yet");
       return (
         '<li class="profile-row' + (active ? " is-active" : "") + '">' +
         '<span class="avatar" aria-hidden="true">' + esc(initials(profile.name)) + "</span>" +
