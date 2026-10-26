@@ -1,4 +1,4 @@
-/* Job Pipeline — Add/edit job dialog, link extraction, confirmations.
+/* Jobby — Add/edit job dialog, link extraction, confirmations.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, api, esc, formatSize, state, statusSelectOptions, toast, todayISO } from "./core.js";

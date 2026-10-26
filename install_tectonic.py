@@ -115,7 +115,7 @@ def download(url, timeout=180):
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "job-pipeline-tectonic-installer",
+            "User-Agent": "jobby-tectonic-installer",
             "Accept": "application/vnd.github+json",
         },
     )

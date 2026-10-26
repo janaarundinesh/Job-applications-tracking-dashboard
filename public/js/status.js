@@ -1,4 +1,4 @@
-/* Job Pipeline — is the local server still answering?
+/* Jobby — is the local server still answering?
 
    Every screen here is backed by the small Python server on this machine, so a
    server that stops has to be visible instead of turning into a run of failed
@@ -57,8 +57,8 @@ function paint() {
     current === "online"
       ? "The tracker server at " + address() + " is answering."
       : current === "offline"
-      ? "No answer from " + address() + ". Double-click “Start Job Pipeline.command” (macOS) or " +
-        "“Start Job Pipeline.bat” (Windows) to start it again — Retry checks again at once."
+      ? "No answer from " + address() + ". Double-click “Start Jobby.command” (macOS) or " +
+        "“Start Jobby.bat” (Windows) to start it again — Retry checks again at once."
       : "Checking whether the tracker server is running…";
 }
 
@@ -144,9 +144,13 @@ function retryNow() {
   // A retry the user asked for goes back to the fast cadence and checks at once
   // rather than waiting out a backoff.
   wait = RETRY_MIN_MS;
+  window.clearTimeout(timer);
+  // A check already on its way answers this one too. Starting a second would be
+  // dropped by the guard in probe() and leave the pill on "checking" with
+  // nothing scheduled behind it.
+  if (probing) return;
   online = null;
   paint();
-  window.clearTimeout(timer);
   probe();
 }
 

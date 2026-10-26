@@ -1,14 +1,14 @@
-# Job Pipeline
+# Jobby
 
-A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, resume / cover letter / document attachments, and an Overleaf-style resume editor with a live preview.
+**Your Job Applications Tracking Buddy.** A local dashboard for your job search: an overview of your pipeline, a separate list of jobs you still want to apply to, a sortable table and drag-and-drop board for applications you have sent, follow-up reminders, job descriptions, resume / cover letter / document attachments, and an Overleaf-style resume editor with a live preview.
 
 No accounts, no build step, no Python dependencies. Python 3.8+ standard library only, and the frontend is plain ES modules that the browser loads directly. Data lives in SQLite on your machine. The one optional extra is [Tectonic](https://tectonic-typesetting.github.io), a LaTeX engine the resume editor uses to compile a real PDF; the launchers install it for you, and everything works without it.
 
 ## Run it
 
-On macOS, double-click **Job Pipeline.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window, and the server keeps running after the icon is done, logging to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
+On macOS, double-click **Jobby.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window, and the server keeps running after the icon is done, logging to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
 
-The launchers are the same thing with a visible console: **Start Job Pipeline.command** on macOS, **Start Job Pipeline.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
+The launchers are the same thing with a visible console: **Start Jobby.command** on macOS, **Start Jobby.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
 
 Should the server die while you work, the launcher starts it again in the same window — without opening a second browser tab — and the dashboard reconnects on its own. If it fails three times within seconds of starting (a port already taken, a database it cannot open) the launcher stops trying and says so, instead of spinning forever.
 
@@ -49,18 +49,18 @@ Every screen is served by that one Python process, so the dashboard is only as a
 
 - **The pill in the topbar** answers *is the server still there?* It reads `GET /api/health` every 20 seconds, turns red the moment a request cannot reach the server (no waiting for the next check), and turns green again as soon as one gets through. Its tooltip names the address it is watching.
 - **Retry**, which appears on the pill while it is red, checks there and then and keeps the checking on a short backoff — 2 seconds at first, growing to 20 — until the server answers. After an outage long enough to notice, coming back offers **Reload** in a message, for a page whose lists may be stale.
-- **The launcher** on macOS (`Job Pipeline.app`, which starts the server when it is not running) and the `.command` / `.bat`, which restart a server that died under them (see [Run it](#run-it)).
+- **The launcher** on macOS (`Jobby.app`, which starts the server when it is not running) and the `.command` / `.bat`, which restart a server that died under them (see [Run it](#run-it)).
 
-A page in a browser cannot start a process on your computer, and that is the limit to know about. The Retry button only ever checks. *Starting* the server happens in a launcher: open **Job Pipeline.app** again, double-click **Start Job Pipeline.command** / **.bat**, or run `python3 server.py`.
+A page in a browser cannot start a process on your computer, and that is the limit to know about. The Retry button only ever checks. *Starting* the server happens in a launcher: open **Jobby.app** again, double-click **Start Jobby.command** / **.bat**, or run `python3 server.py`.
 
-This is also why a dashboard installed with the browser's own *Install page as app* can show the start screen: that icon is the browser's, so opening it cannot start Python. Use **Job Pipeline.app** in the Dock instead and the server is started for you — see [Which app icon to use](#which-app-icon-to-use).
+This is also why a dashboard installed with the browser's own *Install page as app* can show the start screen: that icon is the browser's, so opening it cannot start Python. Use **Jobby.app** in the Dock instead and the server is started for you — see [Which app icon to use](#which-app-icon-to-use).
 
 ## Which app icon to use
 
 There are two ways to get an icon for this dashboard, and only one of them can start the server.
 
-- **Job Pipeline.app** (macOS, in the project folder) — a real app bundle. Double-click it, or drag it to the Dock, and it starts the tracker, waits for it, and opens the dashboard. Keep the bundle where it is (dock an alias if you want it elsewhere), so it can find your data.
-- **The browser's install** (*Add to Dock* in Safari, *Install page as app* in Chrome) — a window without tabs. It looks the same, but it is a web page: while the server is down it can only show the *Start the Job Pipeline server* screen. If you use this one, keep the server running (start it at login, or leave the `.command` window open) — or use the app bundle above instead.
+- **Jobby.app** (macOS, in the project folder) — a real app bundle. Double-click it, or drag it to the Dock, and it starts the tracker, waits for it, and opens the dashboard. Keep the bundle where it is (dock an alias if you want it elsewhere), so it can find your data.
+- **The browser's install** (*Add to Dock* in Safari, *Install page as app* in Chrome) — a window without tabs. It looks the same, but it is a web page: while the server is down it can only show the *Start the Jobby server* screen. If you use this one, keep the server running (start it at login, or leave the `.command` window open) — or use the app bundle above instead.
 
 ## Install it as an app
 
@@ -70,7 +70,7 @@ The dashboard ships a [web app manifest](public/manifest.webmanifest) and a [ser
 - **Safari on macOS 14+** — **File → Add to Dock**. On iPhone or iPad, **Share → Add to Home Screen**.
 - Anything else that supports installing web apps will offer it too; the app is served from `http://127.0.0.1:8787`, so it only works while that server runs.
 
-The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Job Pipeline server* screen with the command and a **Check again** button, which keeps looking in the background and steps into the dashboard once the server answers. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
+The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Jobby server* screen with the command and a **Check again** button, which keeps looking in the background and steps into the dashboard once the server answers. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
 
 ## The tabs
 
@@ -246,7 +246,7 @@ The **API suite** covers creating and validating jobs, stage changes and their t
 
 The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, previews and downloads that profile's documents, opens a locked profile's resume file and its `\includegraphics` picture, sees a preview that cannot load offer **Try again**, checks that each match number and its drawer chip are coloured by their band, that the tables carry each job's link with any pasted note trimmed off, that a job closed while it opens still closes, that the topbar pill reports the server as active, turns red when a request cannot reach it, keeps **Retry** on hand and goes green again when the server answers — and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen, which **Check again** can leave and which steps into the dashboard by itself once the server is back.
 
-A third, small suite drives the launchers with stand-in tools. `Start Job Pipeline.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned; `Job Pipeline.app`'s launch script gets a `curl` that reports the server down and then up, so starting it, waiting for it and opening the dashboard — and leaving a running server alone — are pinned without a real port or browser.
+A third, small suite drives the launchers with stand-in tools. `Start Jobby.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned; `Jobby.app`'s launch script gets a `curl` that reports the server down and then up, so starting it, waiting for it and opening the dashboard — and leaving a running server alone — are pinned without a real port or browser.
 
 
 ```bash
@@ -275,9 +275,9 @@ If the interpreter it finds has no pytest, the hook says so and lets the commit 
 ## Files
 
 ```
-Job Pipeline.app            macOS app bundle: starts the server if needed, then opens the dashboard
-Start Job Pipeline.command  macOS double-click launcher (same thing, in a terminal window)
-Start Job Pipeline.bat      Windows double-click launcher (same thing)
+Jobby.app               macOS app bundle: starts the server if needed, then opens the dashboard
+Start Jobby.command     macOS double-click launcher (same thing, in a terminal window)
+Start Jobby.bat         Windows double-click launcher (same thing)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI: index.html, styles.css, sw.js, manifest.webmanifest, icons

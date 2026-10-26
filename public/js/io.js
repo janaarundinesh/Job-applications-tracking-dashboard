@@ -1,4 +1,4 @@
-/* Job Pipeline — CSV/JSON export and import.
+/* Jobby — CSV/JSON export and import.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, api, download, state, toast, todayISO } from "./core.js";

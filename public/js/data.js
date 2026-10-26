@@ -1,4 +1,4 @@
-/* Job Pipeline — Loading, filtering and mutating data (jobs, documents, bulk actions).
+/* Jobby — Loading, filtering and mutating data (jobs, documents, bulk actions).
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, CLOSED, DEFAULT_GOALS, DOC_LABEL, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, download, fetchFile, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";

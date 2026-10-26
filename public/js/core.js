@@ -1,4 +1,4 @@
-/* Job Pipeline — Shared state, formatting, dates, the API client and small helpers.
+/* Jobby — Shared state, formatting, dates, the API client and small helpers.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { openUnlock } from "./profiles.js";

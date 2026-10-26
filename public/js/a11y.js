@@ -1,4 +1,4 @@
-/* Job Pipeline — Keyboard and screen-reader behaviour for the dialogs.
+/* Jobby — Keyboard and screen-reader behaviour for the dialogs.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $$ } from "./core.js";

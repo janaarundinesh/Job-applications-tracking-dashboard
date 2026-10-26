@@ -1,4 +1,4 @@
-# Job Pipeline runs on the Python standard library alone: there is nothing to
+# Jobby runs on the Python standard library alone: there is nothing to
 # pip install for the app itself. (requirements-dev.txt has the test tools.)
 #
 # The Resume tab's Compile button uses Tectonic, a self-contained LaTeX engine

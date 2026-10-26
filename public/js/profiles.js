@@ -1,4 +1,4 @@
-/* Job Pipeline — User picker, profile switching, PIN lock and Settings.
+/* Jobby — User picker, profile switching, PIN lock and Settings.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, DEFAULT_GOALS, ICON, api, clearToken, esc, sessionToken, setToken, state, todayISO, toast, tokenFor } from "./core.js";
@@ -641,7 +641,7 @@ export async function downloadBackup(button) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "job-pipeline-backup-" + todayISO() + ".zip";
+    link.download = "jobby-backup-" + todayISO() + ".zip";
     document.body.appendChild(link);
     link.click();
     link.remove();

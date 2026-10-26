@@ -1,4 +1,4 @@
-/* Job Pipeline — local application tracker */
+/* Jobby — your job applications tracking buddy */
 
 :root,
 [data-theme="dark"] {
@@ -240,6 +240,15 @@ kbd {
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
 .brand-text strong { font-size: 15px; letter-spacing: -0.015em; }
 .brand-text span { font-size: 11.5px; color: var(--text-faint); letter-spacing: 0.02em; }
+
+/* The tagline is a sentence, and the topbar also holds five tabs and six
+   actions: it only has room for it on a wide window. The picker, the page
+   title and the app bundle all carry it regardless. */
+.topbar .brand-text span { display: none; }
+
+@media (min-width: 1460px) {
+  .topbar .brand-text span { display: block; }
+}
 
 .profile-chip {
   display: inline-flex;

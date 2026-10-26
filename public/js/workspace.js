@@ -1,4 +1,4 @@
-/* Job Pipeline — The Applied / To apply / Trash workspace: table, board and filters.
+/* Jobby — The Applied / To apply / Trash workspace: table, board and filters.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, emptyState, esc, fmtDate, fmtShortDate, isOverdue, jobHref, matchBadge, matchBand, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";

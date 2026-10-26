@@ -1,4 +1,4 @@
-/* Job Pipeline — The Overview tab: stats, goals, streak, charts and reminders.
+/* Jobby — The Overview tab: stats, goals, streak, charts and reminders.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, CLOSED, DAY_NAMES, DEFAULT_GOALS, ICON, STATUSES, dayDiff, daysSince, dueLabel, esc, fmtDate, fmtShortDate, isOverdue, isoOf, needsReview, startOfDay, startOfWeek, state, toast, todayISO } from "./core.js";

@@ -1,4 +1,4 @@
-/* Job Pipeline — Event wiring and boot.
+/* Jobby — Event wiring and boot.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, state, statusSelectOptions, toast, todayISO, tokenFor } from "./core.js";

@@ -1,4 +1,4 @@
-/* Job Pipeline — installable app.
+/* Jobby — installable app.
    Registers the service worker and keeps the browser chrome in step with the
    theme. ES module, no build step. Open the dashboard through server.py. */
 
@@ -25,12 +25,12 @@ export function syncThemeColor(theme) {
 export function showOfflineScreen() {
   document.documentElement.classList.add("is-offline");
   const title = document.getElementById("file-guard-title");
-  if (title) title.textContent = "Start the Job Pipeline server";
+  if (title) title.textContent = "Start the Jobby server";
   const lead = document.getElementById("file-guard-lead");
   if (lead) {
     lead.textContent =
       "The dashboard opened, but the small Python server that keeps your jobs, documents and goals is not running." +
-      " Opening Job Pipeline.app starts it — or run the command below — and this screen steps into the dashboard as soon as it answers.";
+      " Opening Jobby.app starts it — or run the command below — and this screen steps into the dashboard as soon as it answers.";
   }
   const status = document.getElementById("file-guard-status");
   if (status) {

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Double-click to start Job Pipeline and open the dashboard.
+rem Double-click to start Jobby and open the dashboard.
 rem Keep this window open while you use the app; Ctrl+C stops the server.
 rem
 rem A dashboard in a browser cannot start a process on this machine, so keeping
@@ -37,7 +37,7 @@ if not defined PY (
 rem Already running? Just open the dashboard.
 %PY% -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen(sys.argv[1] + '/api/health', timeout=1.5).status == 200 else 1)" "%URL%" >nul 2>nul
 if not errorlevel 1 (
-  echo Job Pipeline is already running at %URL%
+  echo Jobby is already running at %URL%
   start "" "%URL%"
   exit /b 0
 )
@@ -46,7 +46,7 @@ rem Compile can build a real PDF with Tectonic. It is optional: fetch it once
 rem into tools\tectonic, and carry on (in-app preview) if that is not possible.
 %PY% install_tectonic.py --quiet
 echo.
-echo Starting Job Pipeline...
+echo Starting Jobby...
 echo.
 
 rem The first run opens the browser; a restart must not open a second tab.

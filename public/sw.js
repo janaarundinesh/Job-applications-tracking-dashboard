@@ -1,4 +1,4 @@
-/* Job Pipeline — service worker.
+/* Jobby — service worker.
    Makes the dashboard installable and lets it open from the app icon even when
    the Python server is not running yet. The API is never cached: job data must
    always come from the server. */

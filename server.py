@@ -301,7 +301,7 @@ def build_backup_archive(db_path):
                     archive.write(path, os.path.join("uploads", os.path.relpath(path, uploads)))
             archive.writestr(
                 "README.txt",
-                "Job Pipeline backup taken %s\n\n"
+                "Jobby backup taken %s\n\n"
                 "tracker.db is the SQLite database; uploads/ holds the documents "
                 "that belong to each job (one folder per job id) and the support "
                 "files of each resume (resume-<id>).\n" % now_iso(),
@@ -1316,7 +1316,7 @@ MAX_RESUMES = 60
 
 # Longest first: the preview renders a subset of LaTeX, so a starter that only
 # uses the supported commands looks right immediately.
-STARTER_RESUME = r"""%% Job Pipeline resume — edit the source here, the preview updates as you type.
+STARTER_RESUME = r"""%% Jobby resume — edit the source here, the preview updates as you type.
 %% Download the .tex from Export when you want to compile it in Overleaf.
 %% Upload a photo or any support file in the Files rail, then reference it:
 %% \includegraphics[width=3cm]{profile.png}
@@ -2544,7 +2544,7 @@ class Handler(BaseHTTPRequestHandler):
                 archive = build_backup_archive(self.db_path)
                 return self.send_archive(
                     archive,
-                    "job-pipeline-backup-%s.zip" % datetime.now().strftime("%Y-%m-%d"),
+                    "jobby-backup-%s.zip" % datetime.now().strftime("%Y-%m-%d"),
                 )
 
             if parts[0] == "profiles":
@@ -2828,7 +2828,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Local job application tracker")
+    parser = argparse.ArgumentParser(description="Jobby — your job applications tracking buddy")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--db", default=DEFAULT_DB, help="Path to the SQLite database")
@@ -2843,7 +2843,8 @@ def main(argv=None):
     backup_database(args.db)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = "http://%s:%d" % (args.host, args.port)
-    print("Job application tracker running at %s" % url)
+    print("Jobby — your job applications tracking buddy")
+    print("Running at %s" % url)
     print("Database: %s" % os.path.abspath(args.db))
     print("Press Ctrl+C to stop")
     if args.open:

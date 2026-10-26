@@ -1,4 +1,4 @@
-/* Job Pipeline — The job detail drawer, its documents and the document preview.
+/* Jobby — The job detail drawer, its documents and the document preview.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, jobHref, matchBadge, matchBand, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";

@@ -261,7 +261,7 @@ def test_main_gives_up_when_the_downloaded_engine_will_not_run(monkeypatch, caps
 
 def test_both_launchers_install_the_engine_before_starting():
     """macOS and Windows get the same one-time install, whichever is double-clicked."""
-    for name in ("Start Job Pipeline.command", "Start Job Pipeline.bat"):
+    for name in ("Start Jobby.command", "Start Jobby.bat"):
         launcher = ROOT / name
         assert launcher.is_file(), "%s is missing" % name
         text = launcher.read_text(encoding="utf-8", errors="replace")

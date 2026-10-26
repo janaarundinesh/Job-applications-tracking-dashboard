@@ -3,13 +3,15 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Job Pipeline</string>
+  <string>Jobby</string>
   <key>CFBundleDisplayName</key>
-  <string>Job Pipeline</string>
+  <string>Jobby</string>
   <key>CFBundleIdentifier</key>
-  <string>local.jobpipeline.dashboard</string>
+  <string>local.jobby.dashboard</string>
   <key>CFBundleExecutable</key>
-  <string>Job Pipeline</string>
+  <string>Jobby</string>
+  <key>CFBundleGetInfoString</key>
+  <string>Your Job Applications Tracking Buddy</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

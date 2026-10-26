@@ -1,4 +1,4 @@
-/* Job Pipeline — One browser notification a day for follow-ups and reviews.
+/* Jobby — One browser notification a day for follow-ups and reviews.
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, state, todayISO } from "./core.js";
@@ -145,7 +145,7 @@ export async function maybeNotify() {
   } catch (error) {
     /* carry on: a duplicate note is better than none */
   }
-  const shown = await post("Job Pipeline", {
+  const shown = await post("Jobby", {
     body: summary,
     tag: "jobpipe-reminders",
     icon: "icon-192.png",

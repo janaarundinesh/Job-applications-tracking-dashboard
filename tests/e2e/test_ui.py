@@ -399,7 +399,7 @@ def test_offline_start_screen_offers_a_retry(page, context):
     page.reload()
     page.wait_for_selector("html.is-offline", state="attached", timeout=10000)
     assert page.locator("#file-guard").is_visible()
-    assert page.locator("#file-guard-title").inner_text() == "Start the Job Pipeline server"
+    assert page.locator("#file-guard-title").inner_text() == "Start the Jobby server"
 
     # "Check again" while the server is still down leaves this screen standing.
     assert page.locator("#file-guard-retry").is_visible()
@@ -423,44 +423,60 @@ def test_the_topbar_reports_the_server_as_active(page):
     assert page.locator("#server-status-retry").is_hidden()
 
 
-def test_a_failed_request_turns_the_indicator_red_and_retry_clears_it(page):
-    enter_profile(page)
-    page.wait_for_selector('#server-status[data-state="online"]')
+def test_a_failed_request_turns_the_indicator_red_and_retry_clears_it(playwright_tools, server_url):
+    # A page driven by the service worker hands its requests to the worker, where
+    # a page route never sees them. Blocking it here keeps the network exactly as
+    # the app's own calls are — the worker never caches the API either way — and
+    # lets the test choose what the server answers.
+    context = playwright_tools.new_context(
+        viewport={"width": 1280, "height": 900}, service_workers="block"
+    )
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.goto(server_url + "/")
+        page.wait_for_load_state("networkidle")
+        enter_profile(page)
+        page.wait_for_selector('#server-status[data-state="online"]')
 
-    # The server stops. This stands in for it: the endpoints answer nothing at
-    # all, the way a stopped process does.
-    asked = []
+        # The server stops. This stands in for it: the endpoints answer nothing
+        # at all, the way a stopped process does.
+        asked = []
 
-    def dead_server(route):
-        asked.append(route.request.url)
-        route.abort()
+        def dead_server(route):
+            asked.append(route.request.url)
+            route.abort()
 
-    page.route("**/api/health", dead_server)
-    page.route("**/api/resumes", dead_server)
+        page.route("**/api/health", dead_server)
+        page.route("**/api/resumes", dead_server)
 
-    # Opening a tab asks the server for its list, and that request now fails:
-    # the pill has to say so at once, without waiting for the next heartbeat.
-    page.click('[data-tab="resume"]')
-    page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
-    assert page.locator("#server-status-text").inner_text() == "Server offline"
-    assert page.locator("#server-status-retry").is_visible()
+        # Opening a tab asks the server for its list, and that request now
+        # fails: the pill has to say so at once, not on the next heartbeat.
+        page.click('[data-tab="resume"]')
+        page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
+        assert page.locator("#server-status-text").inner_text() == "Server offline"
+        assert page.locator("#server-status-retry").is_visible()
 
-    # Retry checks there and then, and does not claim the server is back.
-    page.click("#server-status-retry")
-    page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
-    assert any(url.endswith("/api/health") for url in asked)
-
-    # A server that is down long enough to notice: coming back is worth saying,
-    # and the way back in is on screen.
-    page.wait_for_timeout(5200)
-    page.unroute("**/api/health")
-    page.unroute("**/api/resumes")
-    if page.locator("#server-status-retry").is_visible():
+        # Retry checks there and then, and does not claim the server is back.
         page.click("#server-status-retry")
-    page.wait_for_selector('#server-status[data-state="online"]', timeout=20000)
-    assert page.locator("#server-status-text").inner_text() == "Server active"
-    assert page.locator("#server-status-retry").is_hidden()
-    assert "is back" in page.locator("#toasts").inner_text()
+        page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
+        assert any(url.endswith("/api/health") for url in asked)
+
+        # A server that is down long enough to notice: coming back is worth
+        # saying. Coming back to the tab asks again straight away, which is the
+        # one check a test can time reliably.
+        page.wait_for_timeout(5200)
+        page.unroute("**/api/health")
+        page.unroute("**/api/resumes")
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_selector('#server-status[data-state="online"]', timeout=10000)
+        assert page.locator("#server-status-text").inner_text() == "Server active"
+        assert page.locator("#server-status-retry").is_hidden()
+        assert "is back" in page.locator("#toasts").inner_text()
+        assert errors == []
+    finally:
+        context.close()
 
 
 RESUME_SOURCE = r"""\documentclass[11pt]{article}

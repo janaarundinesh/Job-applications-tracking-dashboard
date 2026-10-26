@@ -1,6 +1,6 @@
 """The app bundle starts the tracker by itself.
 
-Opening Job Pipeline.app must never need a terminal, a command to copy or a
+Opening Jobby.app must never need a terminal, a command to copy or a
 second click: it starts the server, waits until it answers and opens the
 dashboard. These tests drive the bundle's own launch script with stand-ins for
 python3, curl, open and osascript, so the whole sequence is exercised without a
@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT / "Job Pipeline.app"
-SCRIPT = APP / "Contents" / "MacOS" / "Job Pipeline"
+APP = ROOT / "Jobby.app"
+SCRIPT = APP / "Contents" / "MacOS" / "Jobby"
 
 STUBS = {
     # Stands in for python3: records the call and claims to have started.
@@ -76,7 +76,7 @@ def run_app(project, mode="down-then-up"):
     env["STUB_DIR"] = str(project / "stubs")
     env["STUB_CURL"] = mode
     result = subprocess.run(
-        ["/bin/sh", str(project / APP.name / "Contents" / "MacOS" / "Job Pipeline")],
+        ["/bin/sh", str(project / APP.name / "Contents" / "MacOS" / "Jobby")],
         env=env,
         cwd=str(project),
         stdin=subprocess.DEVNULL,

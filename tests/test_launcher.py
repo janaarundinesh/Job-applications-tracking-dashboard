@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = ROOT / "Start Job Pipeline.command"
+LAUNCHER = ROOT / "Start Jobby.command"
 
 # Stands in for python3: the health probe fails, and the server dies the moment
 # it starts. Every call is written down so the test can count the restarts.

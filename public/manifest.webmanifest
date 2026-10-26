@@ -1,7 +1,7 @@
 {
-  "name": "Job Pipeline — Application Tracker",
-  "short_name": "Job Pipeline",
-  "description": "Track job applications, follow-ups and documents on this machine.",
+  "name": "Jobby — Your Job Applications Tracking Buddy",
+  "short_name": "Jobby",
+  "description": "Your Job Applications Tracking Buddy: applications, follow-ups and documents, on this machine.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

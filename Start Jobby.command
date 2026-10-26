@@ -1,5 +1,5 @@
 #!/bin/sh
-# Double-click to start Job Pipeline and open the dashboard.
+# Double-click to start Jobby and open the dashboard.
 # Keep this Terminal window open while you use the app; Ctrl+C stops the server.
 #
 # If a server is already running on port 8787, this just opens the dashboard.
@@ -35,7 +35,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 if server_is_up; then
-  echo "Job Pipeline is already running at $URL"
+  echo "Jobby is already running at $URL"
   open "$URL"
   exit 0
 fi
@@ -44,7 +44,7 @@ fi
 # into tools/tectonic, and carry on (in-app preview) if that is not possible.
 python3 install_tectonic.py --quiet
 echo
-echo "Starting Job Pipeline…"
+echo "Starting Jobby…"
 echo
 
 # Ctrl+C in this window stops the server for good; anything else is a crash.

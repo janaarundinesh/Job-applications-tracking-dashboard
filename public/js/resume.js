@@ -1,4 +1,4 @@
-/* Job Pipeline — The resume editor: LaTeX source on the left of the split,
+/* Jobby — The resume editor: LaTeX source on the left of the split,
    a rendered page on the right, and the profile's resumes in the rail.
    ES module, no build step. Open the dashboard through server.py. */
 
