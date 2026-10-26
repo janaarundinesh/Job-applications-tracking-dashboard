@@ -1,7 +1,7 @@
 /* Job Pipeline — Loading, filtering and mutating data (jobs, documents, bulk actions).
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, CLOSED, DEFAULT_GOALS, DOC_LABEL, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
+import { $, CLOSED, DEFAULT_GOALS, DOC_LABEL, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, download, fetchFile, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
 import { chooseSavedFile, confirmAction } from "./dialogs.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { openUnlock } from "./profiles.js";
@@ -377,6 +377,20 @@ export async function uploadDocuments(appId, kind, files) {
   if (tooBig) toast(tooBig + " file" + (tooBig === 1 ? "" : "s") + " over the 10 MB limit skipped", true);
   if (failed) toast(failed + " file" + (failed === 1 ? "" : "s") + " could not be attached", true);
   if (done && state.drawerId === appId) openDrawer(appId);
+}
+
+
+/* Save a job's document to the machine. A plain download link cannot carry the
+   unlock token a PIN-protected profile needs, so the bytes come through fetch. */
+export async function downloadDocument(appId, docId) {
+  const doc = state.drawerDocuments.find((item) => item.id === docId);
+  if (!doc) return;
+  try {
+    const blob = await fetchFile(doc.url);
+    download(doc.filename, blob, blob.type || "application/octet-stream");
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 

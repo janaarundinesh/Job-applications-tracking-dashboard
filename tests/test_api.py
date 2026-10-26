@@ -698,6 +698,29 @@ def test_document_downloads_need_no_token(api):
     assert response.body == b"hello resume"
 
 
+def test_a_locked_profile_hides_its_documents_from_bare_urls(api):
+    """A download link cannot carry the unlock token, so the dashboard fetches
+    document bytes with a signed request instead of opening a bare URL."""
+    profile = api.get("/api/profiles").data[0]
+    created = api.create(company="Locked", role="Dev")
+    uploaded = api.upload(created["id"], b"secret cover letter", filename="cover.txt")
+    assert uploaded.status == 201
+    url = uploaded.data["url"]
+    # No PIN yet: the browser can open the file on its own.
+    assert api.get(url, token="").status == 200
+
+    set_pin = api.post("/api/profiles/%d/pin" % profile["id"], {"pin": "4321"})
+    assert set_pin.status == 200
+    bare = api.get(url, token="")
+    assert bare.status == 423
+    assert bare.data["error"] == "This profile is locked"
+
+    token = api.post("/api/profiles/%d/unlock" % profile["id"], {"pin": "4321"}).data["token"]
+    signed = api.get(url, token="", headers={"X-Profile-Token": token})
+    assert signed.status == 200
+    assert signed.body == b"secret cover letter"
+
+
 def test_backup_archive_holds_the_database_and_documents(api):
     import io
     import zipfile

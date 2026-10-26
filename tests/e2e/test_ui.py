@@ -1000,7 +1000,13 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     page.click("#drawer .doc-name")
     page.wait_for_selector("#preview-backdrop:not([hidden])")
     assert "arun-cv-airbus.pdf" in page.inner_text("#preview-title")
-    assert page.get_attribute("#preview-download", "download") == "arun-cv-airbus.pdf"
+    # The bytes arrive over a signed request, so the download link only gets its
+    # blob URL once that has come back.
+    page.wait_for_function(
+        "() => document.querySelector('#preview-download').getAttribute('download') === 'arun-cv-airbus.pdf'"
+    )
+    assert page.get_attribute("#preview-download", "href").startswith("blob:")
+    assert page.get_attribute("#preview-open", "href").startswith("blob:")
 
 
 def test_settings_shows_the_engine_and_installs_it_on_one_click(page, monkeypatch, tmp_path):
@@ -1076,3 +1082,121 @@ def test_set_goals_opens_the_goals_panel(page):
     page.wait_for_selector("#settings-hub:not([hidden])")
     assert page.locator('[data-settings-panel="goals"]').is_hidden()
     assert page.inner_text("#settings-title") == "Settings"
+
+
+def test_job_document_preview_and_download_on_a_locked_profile(page):
+    """A preview opened with a bare URL came back "This profile is locked"."""
+    enter_profile(page)
+    created = api_post(
+        page,
+        "/api/applications",
+        {"company": "Locked Ltd", "role": "Simulation Developer", "phase": "to_apply"},
+    )
+    assert created["status"] == 201
+    app_id = created["body"]["id"]
+
+    # A text document, so the preview has to be fetched rather than framed.
+    uploaded = api_post(
+        page,
+        "/api/applications/%d/documents" % app_id,
+        {
+            "filename": "cover-letter.txt",
+            "kind": "cover_letter",
+            "content_type": "text/plain",
+            "data": base64.b64encode(b"Tailored for the A400M role.\n").decode("ascii"),
+        },
+    )
+    assert uploaded["status"] == 201, uploaded
+
+    # Turn the lock on, then come back in through the PIN prompt.
+    locked = api_post(page, "/api/profiles/1/pin", {"pin": "4321"})
+    assert locked["status"] == 200, locked
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    page.wait_for_selector("#welcome-list [data-enter-profile]")
+    page.locator("#welcome-list [data-enter-profile]").first.click()
+    page.wait_for_selector("#unlock-backdrop:not([hidden])")
+    page.fill("#unlock-pin", "4321")
+    page.click("#unlock-submit")
+    page.wait_for_selector("#panel-overview:not([hidden])")
+
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    page.locator("#toapply-table-body tr").first.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+
+    page.click("#drawer .doc-name")
+    page.wait_for_selector("#preview-backdrop:not([hidden])")
+    page.wait_for_function(
+        "() => document.querySelector('#preview-body .preview-text') !== null"
+    )
+    shown = page.inner_text("#preview-body")
+    assert "Tailored for the A400M role." in shown
+    assert "locked" not in shown.lower()
+
+    # Downloading needs the same unlock token, so it goes through fetch too.
+    page.click("#preview-close")
+    page.wait_for_selector("#preview-backdrop", state="hidden")
+    with page.expect_download() as download:
+        page.click("#drawer [data-doc-download]")
+    assert download.value.suggested_filename == "cover-letter.txt"
+    assert download.value.path().read_text() == "Tailored for the A400M role.\n"
+
+
+def test_a_document_that_vanished_offers_try_again(page):
+    """A preview that cannot load says why, and offers another go."""
+    enter_profile(page)
+    created = api_post(
+        page,
+        "/api/applications",
+        {"company": "Gone Ltd", "role": "Simulation Developer", "phase": "to_apply"},
+    )
+    app_id = created["body"]["id"]
+    uploaded = api_post(
+        page,
+        "/api/applications/%d/documents" % app_id,
+        {
+            "filename": "notes.txt",
+            "kind": "other",
+            "content_type": "text/plain",
+            "data": base64.b64encode(b"Notes for the role.\n").decode("ascii"),
+        },
+    )
+    assert uploaded["status"] == 201, uploaded
+    document_id = uploaded["body"]["id"]
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    page.locator("#toapply-table-body tr").first.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+
+    # Remove the file behind the dashboard's back, as another window could.
+    removed = page.evaluate(
+        """async ({ path }) => {
+            const session = await (await fetch('/api/session')).json();
+            const response = await fetch(path, {
+              method: 'DELETE',
+              headers: { 'X-Api-Token': session.token },
+            });
+            return response.status;
+          }""",
+        {"path": "/api/applications/%d/documents/%d" % (app_id, document_id)},
+    )
+    assert removed == 200
+
+    page.click("#drawer .doc-name")
+    page.wait_for_selector("#preview-backdrop:not([hidden])")
+    page.wait_for_selector("#preview-body .preview-fallback")
+    # The server's own words, not a bare status code.
+    assert "Document not found" in page.inner_text("#preview-body")
+
+    # Try again retries the same file rather than leaving a dead end.
+    page.click("#preview-retry")
+    page.wait_for_selector("#preview-body .preview-fallback")
+    assert "Document not found" in page.inner_text("#preview-body")

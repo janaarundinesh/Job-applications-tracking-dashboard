@@ -81,6 +81,7 @@ export const state = {
   editingId: null,
   selection: new Set(),
   previewDoc: null,
+  previewUrl: null,
   goalProgress: null,
   settings: Object.assign({}, DEFAULT_GOALS),
   profiles: [],
@@ -409,16 +410,56 @@ export async function api(path, options) {
 }
 
 
-export async function request(path, options) {
-  const init = Object.assign({ headers: { "Content-Type": "application/json" } }, options);
-  init.headers = Object.assign({}, init.headers);
-  init.headers["X-Api-Token"] = await sessionToken();
+/* What every request to the tracker needs: the session token, and the unlock
+   token when the profile is PIN protected. */
+export async function authHeaders(path) {
+  const headers = { "X-Api-Token": await sessionToken() };
   // Listing profiles is not scoped to one of them; everything else is.
   if (state.profileId && path !== "/api/profiles") {
-    init.headers["X-Profile-Id"] = String(state.profileId);
+    headers["X-Profile-Id"] = String(state.profileId);
     const token = tokenFor(state.profileId);
-    if (token) init.headers["X-Profile-Token"] = token;
+    if (token) headers["X-Profile-Token"] = token;
   }
+  return headers;
+}
+
+
+/* A document or resume file as bytes.
+
+   A browser only adds these headers to a fetch: an <img>, an <iframe> or a
+   download link sends none of them, so for a PIN-protected profile anything
+   opened that way came back as "This profile is locked". Files are fetched here
+   instead and shown from a blob URL. */
+export async function fetchFile(path) {
+  let response;
+  try {
+    response = await fetch(path, { headers: await authHeaders(path), cache: "no-store" });
+  } catch (error) {
+    throw new Error("Can't reach the tracker server. Check that it is still running, then try again.");
+  }
+  if (!response.ok) {
+    let message = "This file could not be loaded (" + response.status + ")";
+    try {
+      const payload = await response.json();
+      if (payload && payload.error) message = payload.error;
+    } catch (error) {
+      // Not a JSON error body: the generic message above is the honest one.
+    }
+    if (response.status === 423 && state.profileId) {
+      clearToken(state.profileId);
+      openUnlock(state.profileId);
+    }
+    const failure = new Error(message);
+    failure.status = response.status;
+    throw failure;
+  }
+  return response.blob();
+}
+
+
+export async function request(path, options) {
+  const init = Object.assign({ headers: { "Content-Type": "application/json" } }, options);
+  init.headers = Object.assign({}, init.headers, await authHeaders(path));
   let response;
   try {
     response = await fetch(path, init);

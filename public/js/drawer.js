@@ -1,7 +1,7 @@
 /* Job Pipeline — The job detail drawer, its documents and the document preview.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
+import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
 import { updateLocal } from "./data.js";
 
 
@@ -114,7 +114,8 @@ export function drawerHTML(app, events, documents) {
             (doc.preview ? "" : " · no preview") +
             "</span>" +
             "</div>" +
-            '<a class="doc-action" href="' + esc(doc.url) + '" download="' + esc(doc.filename) + '" title="Download ' + esc(doc.filename) + '">Download</a>' +
+            '<button type="button" class="doc-action" data-doc-download="' + doc.id + '"' +
+            ' title="Download ' + esc(doc.filename) + '">Download</button>' +
             '<button type="button" class="doc-action danger" data-doc-delete="' + doc.id + '" aria-label="Remove ' + esc(doc.filename) + '">' + ICON.trash + "</button>" +
             "</li>"
           );
@@ -275,68 +276,89 @@ export function closeDrawer() {
 export const PREVIEW_TEXT_LIMIT = 400000;
 
 
-export function openPreview(doc) {
+export async function openPreview(doc) {
   if (!doc) return;
+  // Opening another file while one is showing: its blob is no longer needed.
+  releasePreviewUrl();
   state.previewDoc = doc;
-  const inlineUrl = doc.url + "?inline=1";
   $("#preview-kind").textContent = DOC_LABEL[doc.kind] || "File";
   $("#preview-title").textContent = doc.filename;
   $("#preview-meta").textContent = [formatSize(doc.size), fmtDate(doc.uploaded_at)]
     .filter(Boolean)
     .join(" · ");
-  const download = $("#preview-download");
-  download.href = doc.url;
-  download.setAttribute("download", doc.filename);
-  $("#preview-open").href = inlineUrl;
 
   const body = $("#preview-body");
-  body.innerHTML = "";
+  body.innerHTML = '<div class="preview-loading">Loading preview…</div>';
+  $("#preview-backdrop").hidden = false;
+  const closeButton = $("#preview-close");
+  if (closeButton) closeButton.focus({ preventScroll: true });
+
+  let blob;
+  try {
+    // inline=1 asks for the bytes as they are rather than as a download.
+    blob = await fetchFile(doc.url + "?inline=1");
+  } catch (error) {
+    if (state.previewDoc !== doc) return;
+    showPreviewError(doc, error.message);
+    return;
+  }
+  // The user may have closed the panel, or opened another file, while this was
+  // in flight.
+  if (state.previewDoc !== doc) return;
+  const url = URL.createObjectURL(blob);
+  state.previewUrl = url;
+  const download = $("#preview-download");
+  download.href = url;
+  download.setAttribute("download", doc.filename);
+  $("#preview-open").href = url;
+
   if (doc.preview === "pdf") {
     body.innerHTML =
-      '<iframe class="preview-frame" src="' + esc(inlineUrl) + '" title="' + esc(doc.filename) + '"></iframe>';
+      '<iframe class="preview-frame" src="' + esc(url) + '" title="' + esc(doc.filename) + '"></iframe>';
   } else if (doc.preview === "image") {
     body.innerHTML =
-      '<img class="preview-image" src="' + esc(inlineUrl) + '" alt="' + esc(doc.filename) + '">';
+      '<img class="preview-image" src="' + esc(url) + '" alt="' + esc(doc.filename) + '">';
   } else if (doc.preview === "text") {
-    body.innerHTML = '<div class="preview-loading">Loading preview…</div>';
-    loadTextPreview(doc, inlineUrl, body);
+    renderTextPreview(doc, await blob.text(), body);
   } else {
     body.innerHTML =
       '<div class="preview-fallback">' + ICON.file +
       "<p>This file type can’t be previewed in the browser.</p>" +
-      '<a class="btn btn-primary" href="' + esc(doc.url) + '" download="' + esc(doc.filename) + '">Download ' +
+      '<a class="btn btn-primary" href="' + esc(url) + '" download="' + esc(doc.filename) + '">Download ' +
       esc(doc.filename) + "</a></div>";
   }
-
-  $("#preview-backdrop").hidden = false;
-  const closeButton = $("#preview-close");
-  if (closeButton) closeButton.focus({ preventScroll: true });
 }
 
 
-export async function loadTextPreview(doc, url, body) {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Could not load this file");
-    let text = await response.text();
-    if (state.previewDoc !== doc) return;
-    const truncated = text.length > PREVIEW_TEXT_LIMIT;
-    if (truncated) text = text.slice(0, PREVIEW_TEXT_LIMIT);
-    body.innerHTML = '<pre class="preview-text"></pre>';
-    body.querySelector("pre").textContent = text;
-    if (truncated) {
-      body.insertAdjacentHTML(
-        "beforeend",
-        '<p class="preview-note">Preview truncated — download the file to read all of it.</p>'
-      );
-    }
-  } catch (error) {
-    if (state.previewDoc !== doc) return;
-    body.innerHTML =
-      '<div class="preview-fallback">' + ICON.file +
-      "<p>" + esc(error.message) + "</p>" +
-      '<a class="btn btn-primary" href="' + esc(doc.url) + '" download="' + esc(doc.filename) + '">Download file</a></div>';
+function renderTextPreview(doc, text, body) {
+  if (state.previewDoc !== doc) return;
+  const truncated = text.length > PREVIEW_TEXT_LIMIT;
+  if (truncated) text = text.slice(0, PREVIEW_TEXT_LIMIT);
+  body.innerHTML = '<pre class="preview-text"></pre>';
+  body.querySelector("pre").textContent = text;
+  if (truncated) {
+    body.insertAdjacentHTML(
+      "beforeend",
+      '<p class="preview-note">Preview truncated — download the file to read all of it.</p>'
+    );
   }
+}
+
+
+function showPreviewError(doc, message) {
+  const body = $("#preview-body");
+  body.innerHTML =
+    '<div class="preview-fallback">' + ICON.file +
+    "<p>" + esc(message) + "</p>" +
+    '<button type="button" class="btn btn-primary" id="preview-retry">Try again</button></div>';
+  const retry = $("#preview-retry");
+  if (retry) retry.addEventListener("click", () => openPreview(doc));
+}
+
+
+function releasePreviewUrl() {
+  if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+  state.previewUrl = null;
 }
 
 
@@ -346,5 +368,6 @@ export function closePreview() {
   $("#preview-body").innerHTML = "";
   $("#preview-download").removeAttribute("href");
   $("#preview-open").removeAttribute("href");
+  releasePreviewUrl();
   state.previewDoc = null;
 }
