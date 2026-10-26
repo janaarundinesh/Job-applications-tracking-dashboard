@@ -729,14 +729,23 @@ async function saveCompiledPdf() {
     return;
   }
   const job = jobs.find((item) => String(item.id) === String(answer.jobId));
+  const where = job ? job.company : "the job";
+  const kindWord =
+    answer.kind === "resume" ? "resume" : answer.kind === "cover_letter" ? "cover letter" : "file";
   try {
     await api("/api/files/" + saved.id + "/attach", {
       method: "POST",
-      body: JSON.stringify({ application_id: answer.jobId, kind: answer.kind }),
+      body: JSON.stringify({
+        application_id: answer.jobId,
+        kind: answer.kind,
+        replace: answer.replace,
+      }),
     });
     toast(
-      "Saved " + saved.filename + " and attached it to " + (job ? job.company : "the job") +
-      " as " + (DOC_LABEL[answer.kind] || "a file")
+      answer.replace
+        ? "Saved " + saved.filename + " and replaced the " + kindWord + " on " + where
+        : "Saved " + saved.filename + " and attached it to " + where + " as " +
+          (DOC_LABEL[answer.kind] || "a file")
     );
     if (String(state.drawerId) === String(answer.jobId)) openDrawer(answer.jobId);
   } catch (error) {

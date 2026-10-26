@@ -412,14 +412,26 @@ export async function attachSavedFileToJob(appId) {
     title: "Attach a saved file",
     text: app ? app.company + " — " + app.role : "",
     files: files,
+    existing: state.drawerDocuments,
   });
   if (!choice) return;
   try {
     await api("/api/files/" + choice.file.id + "/attach", {
       method: "POST",
-      body: JSON.stringify({ application_id: appId, kind: choice.kind }),
+      body: JSON.stringify({
+        application_id: appId,
+        kind: choice.kind,
+        replace: choice.replace,
+      }),
     });
-    toast("Attached " + choice.file.filename + " as " + (DOC_LABEL[choice.kind] || "a file"));
+    const kindWord =
+      choice.kind === "resume" ? "resume" : choice.kind === "cover_letter" ? "cover letter" : "file";
+    toast(
+      choice.replace
+        ? "Replaced the " + kindWord + " on " + (app ? app.company : "the job") +
+          " with " + choice.file.filename
+        : "Attached " + choice.file.filename + " as " + (DOC_LABEL[choice.kind] || "a file")
+    );
     openDrawer(appId);
   } catch (error) {
     toast(error.message, true);

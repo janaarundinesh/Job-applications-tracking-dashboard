@@ -1659,6 +1659,38 @@ def find_saved_file(db_path, profile_id, file_id):
     return row, path
 
 
+def replace_kind_documents(db_path, profile_id, app_id, kind):
+    """Drop a job's documents of one kind, and their files, before attaching.
+
+    Attaching adds by default; { "replace": true } turns it into an update of
+    that slot, so yesterday's tailored resume does not sit beside today's.
+    """
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT d.id, d.stored_name FROM documents d JOIN applications a"
+            " ON a.id = d.application_id"
+            " WHERE d.application_id = ? AND a.profile_id = ? AND d.kind = ?",
+            (app_id, profile_id, kind),
+        ).fetchall()
+        if rows:
+            conn.execute(
+                "DELETE FROM documents WHERE application_id = ? AND kind = ?",
+                (app_id, kind),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    for row in rows:
+        try:
+            os.remove(
+                os.path.join(uploads_root(db_path), str(app_id), row["stored_name"])
+            )
+        except OSError:
+            pass
+    return [row["id"] for row in rows]
+
+
 def attach_saved_file(db_path, profile_id, file_id, payload):
     """File one of the saved files onto a job, without uploading it again."""
     if payload is not None and not isinstance(payload, dict):
@@ -1672,9 +1704,15 @@ def attach_saved_file(db_path, profile_id, file_id, payload):
     except (TypeError, ValueError):
         raise ApiError(400, "application_id must be a job id")
     kind = fields.get("kind") or "other"
+    if kind not in DOC_KINDS:
+        raise ApiError(400, "kind must be one of: %s" % ", ".join(DOC_KINDS))
     row, path = find_saved_file(db_path, profile_id, file_id)
     with open(path, "rb") as handle:
         raw = handle.read()
+    # Validate everything that can fail before the old copy goes away.
+    replaced = []
+    if fields.get("replace") is True:
+        replaced = replace_kind_documents(db_path, profile_id, app_id, kind)
     document = save_document(
         db_path,
         profile_id,
@@ -1686,7 +1724,7 @@ def attach_saved_file(db_path, profile_id, file_id, payload):
             "data": base64.b64encode(raw).decode("ascii"),
         },
     )
-    return {"document": document, "application_id": app_id}
+    return {"document": document, "application_id": app_id, "replaced": replaced}
 
 
 def list_resumes(db_path, profile_id):

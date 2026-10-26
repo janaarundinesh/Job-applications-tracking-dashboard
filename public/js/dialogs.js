@@ -234,12 +234,16 @@ function openDialog(template, onKey) {
 
 
 /* Pick one of the files saved with your resumes. Resolves with
-   { file, kind }, or null when the dialog is dismissed. */
+   { file, kind, replace }, or null when the dialog is dismissed. */
 export function chooseSavedFile(config) {
   const settings = config || {};
   const template = $("#file-picker-template");
   if (!template) return Promise.resolve(null);
   const files = Array.isArray(settings.files) ? settings.files : [];
+  // What the job already has, so a taken slot can offer to replace instead.
+  const existing = Array.isArray(settings.existing) ? settings.existing : [];
+  const kindWord = (value) =>
+    value === "resume" ? "resume" : value === "cover_letter" ? "cover letter" : "file";
 
   return new Promise((resolve) => {
     const dialog = openDialog(template, resolve);
@@ -247,7 +251,19 @@ export function chooseSavedFile(config) {
     const input = backdrop.querySelector(".picker-input");
     const list = backdrop.querySelector(".picker-list");
     const empty = backdrop.querySelector(".picker-empty");
+    const replaceRow = backdrop.querySelector(".picker-replace");
+    const replaceInput = backdrop.querySelector(".picker-replace-input");
+    const replaceWhat = backdrop.querySelector(".picker-replace-what");
     let kind = settings.kind || "resume";
+
+    const syncReplace = () => {
+      const taken = existing.filter((doc) => (doc.kind || "other") === kind);
+      replaceRow.hidden = !taken.length;
+      if (!taken.length) return;
+      const count = taken.length > 1 ? taken.length + " " + kindWord(kind) + "s" : "a " + kindWord(kind);
+      replaceWhat.textContent =
+        count + " already on this job (" + taken[0].filename + ") — replace it instead of adding another copy";
+    };
 
     const renderRows = () => {
       const query = input.value.trim().toLowerCase();
@@ -290,13 +306,20 @@ export function chooseSavedFile(config) {
         backdrop.querySelectorAll("[data-picker-kind]").forEach((other) => {
           other.classList.toggle("is-active", other === button);
         });
+        syncReplace();
       });
     });
     list.addEventListener("click", (event) => {
       const button = event.target.closest("[data-picker-file]");
       if (!button) return;
       const file = files.find((item) => String(item.id) === button.dataset.pickerFile);
-      if (file) dialog.finish({ file: file, kind: kind });
+      if (file) {
+        dialog.finish({
+          file: file,
+          kind: kind,
+          replace: !replaceRow.hidden && replaceInput.checked,
+        });
+      }
     });
     input.addEventListener("input", renderRows);
     input.addEventListener("keydown", (event) => {
@@ -307,6 +330,7 @@ export function chooseSavedFile(config) {
     });
 
     renderRows();
+    syncReplace();
     window.setTimeout(() => input.focus(), 30);
   });
 }
@@ -351,7 +375,7 @@ export function promptName(config) {
 /* Save the compiled PDF and put it where it is going to be used. The name and
    the job sit in one dialog, so the usual trip — save, switch tab, open the job,
    open its Documents, pick the file again — is one step. Resolves with
-   { name, kind, jobId } (jobId null when the file is only saved), or null. */
+   { name, kind, jobId, replace } (jobId null when the file is only saved), or null. */
 export function savePdfDialog(config) {
   const settings = config || {};
   const template = $("#save-pdf-template");
@@ -372,8 +396,10 @@ export function savePdfDialog(config) {
     const list = backdrop.querySelector(".savepdf-jobs");
     const empty = backdrop.querySelector(".savepdf-empty");
     const okButton = backdrop.querySelector(".savepdf-ok");
+    const replaceInput = backdrop.querySelector(".savepdf-replace-input");
     let kind = settings.kind || "resume";
     let jobId = linkedId;
+    let replace = true;
 
     nameField.value = settings.filename || "";
     backdrop.querySelector(".savepdf-text").textContent =
@@ -405,20 +431,30 @@ export function savePdfDialog(config) {
       );
     };
 
-    // Attaching never replaces a document, so say plainly when the chosen slot
-    // on this job is already taken.
+    const existingFor = (job, value) =>
+      job ? docsFor(job).filter((doc) => (doc.kind || "other") === value) : [];
+
+    // Attaching adds by default, but a new version of the same resume is the
+    // usual reason to save one, so a taken slot offers to replace instead.
     const syncNote = () => {
       const note = backdrop.querySelector(".savepdf-note");
       const job = jobs.find((item) => String(item.id) === String(jobId));
-      const existing = job ? docsFor(job).filter((doc) => (doc.kind || "other") === kind) : [];
+      const existing = existingFor(job, kind);
       note.hidden = !existing.length;
       if (!existing.length) return;
-      note.textContent =
+      note.querySelector(".savepdf-note-text").textContent =
         "Already has " +
         (existing.length === 1
           ? "a " + kindLabel(kind) + " (" + existing[0].filename + ")"
           : existing.length + " " + kindLabel(kind) + "s") +
-        " — attaching adds another one.";
+        " on this job.";
+    };
+
+    const syncOk = () => {
+      const job = jobs.find((item) => String(item.id) === String(jobId));
+      const replacing = Boolean(job) && replace && existingFor(job, kind).length > 0;
+      okButton.disabled = !job;
+      okButton.textContent = replacing ? "Save & replace" : "Save & attach";
     };
 
     const renderJobs = () => {
@@ -431,9 +467,8 @@ export function savePdfDialog(config) {
         : "No jobs yet — save the file here and attach it later from a job's Documents section.";
       empty.hidden = Boolean(matches.length);
       list.innerHTML = matches.map(rowHtml).join("");
-      const chosen = jobs.some((job) => String(job.id) === String(jobId));
-      okButton.disabled = !chosen;
       syncNote();
+      syncOk();
     };
 
     const finishWith = (attach) => {
@@ -442,7 +477,14 @@ export function savePdfDialog(config) {
         nameField.focus();
         return;
       }
-      dialog.finish({ name: value, kind: kind, jobId: attach ? jobId : null });
+      const job = jobs.find((item) => String(item.id) === String(jobId));
+      const replacing = Boolean(attach && replace && job && existingFor(job, kind).length);
+      dialog.finish({
+        name: value,
+        kind: kind,
+        jobId: attach ? jobId : null,
+        replace: replacing,
+      });
     };
 
     backdrop.querySelectorAll("[data-savepdf-kind]").forEach((button) => {
@@ -454,7 +496,12 @@ export function savePdfDialog(config) {
           other.classList.toggle("is-active", other === button);
         });
         syncNote();
+        syncOk();
       });
+    });
+    replaceInput.addEventListener("change", () => {
+      replace = replaceInput.checked;
+      syncOk();
     });
     list.addEventListener("click", (event) => {
       const button = event.target.closest("[data-savepdf-job]");
@@ -465,8 +512,8 @@ export function savePdfDialog(config) {
       backdrop.querySelectorAll("[data-savepdf-job]").forEach((other) => {
         other.classList.toggle("is-selected", other === button);
       });
-      okButton.disabled = false;
       syncNote();
+      syncOk();
       okButton.focus();
     });
     search.addEventListener("input", renderJobs);

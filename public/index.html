@@ -930,6 +930,10 @@
           <button type="button" class="picker-kind" data-picker-kind="cover_letter">Cover letter</button>
           <button type="button" class="picker-kind" data-picker-kind="other">Other</button>
         </div>
+        <label class="picker-replace" hidden>
+          <input type="checkbox" class="picker-replace-input" checked />
+          <span class="picker-replace-what"></span>
+        </label>
         <label class="search picker-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
           <input type="search" class="picker-input" placeholder="Search your saved files…" autocomplete="off" />
@@ -986,7 +990,13 @@
         </label>
         <ul class="picker-list savepdf-jobs"></ul>
         <p class="picker-empty savepdf-empty" hidden></p>
-        <p class="savepdf-note" hidden></p>
+        <div class="savepdf-note" hidden>
+          <p class="savepdf-note-text"></p>
+          <label class="savepdf-replace">
+            <input type="checkbox" class="savepdf-replace-input" checked />
+            <span>Replace it instead of adding a second copy</span>
+          </label>
+        </div>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn btn-ghost savepdf-cancel">Cancel</button>

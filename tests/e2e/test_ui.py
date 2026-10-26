@@ -1303,6 +1303,21 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     assert "Cover letter" in page.inner_text("#drawer .doc-meta")
     assert "Attached arun-cv-airbus.pdf as Cover letter" in page.inner_text("#toasts")
 
+    # Picking the same slot again offers to replace the copy already there.
+    page.click('[data-action="pick-saved"]')
+    page.wait_for_selector(".picker-list [data-picker-file]")
+    page.click('[data-picker-kind="cover_letter"]')
+    page.wait_for_selector(".picker-replace:not([hidden])")
+    assert "a cover letter already on this job (arun-cv-airbus.pdf)" in page.inner_text(
+        ".picker-replace"
+    )
+    page.click(".picker-list [data-picker-file]")
+    page.wait_for_function(
+        "() => document.querySelector('#toasts').textContent.includes('Replaced the cover letter on Airbus Defence and Space')"
+    )
+    # Replaced, not doubled: the job still holds the one cover letter.
+    page.wait_for_function("() => document.querySelectorAll('#drawer .doc-name').length === 1")
+
     # It is the job's own copy: previewable and downloadable under the saved name.
     page.click("#drawer .doc-name")
     page.wait_for_selector("#preview-backdrop:not([hidden])")
@@ -1343,6 +1358,23 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
         "() => document.querySelector('#toasts').textContent.includes('arun-cv-airbus-tailored.pdf')"
     )
     assert "attached it to Airbus Defence and Space as Resume" in page.inner_text("#toasts")
+
+    # The slot now holds a resume, so the next save offers to replace it rather
+    # than quietly stacking a second copy.
+    page.click("#resume-save-pdf")
+    page.wait_for_selector(".savepdf-jobs [data-savepdf-job]")
+    page.fill(".savepdf-name", "arun-cv-airbus-v2")
+    page.click(".savepdf-jobs [data-savepdf-job]")
+    page.wait_for_selector(".savepdf-note:not([hidden])")
+    assert "Already has a resume (arun-cv-airbus-tailored.pdf) on this job." in page.inner_text(
+        ".savepdf-note"
+    )
+    assert page.inner_text(".savepdf-ok") == "Save & replace"
+    page.click(".savepdf-ok")
+    page.wait_for_function(
+        "() => document.querySelector('#toasts').textContent.includes('arun-cv-airbus-v2.pdf')"
+    )
+    assert "replaced the resume on Airbus Defence and Space" in page.inner_text("#toasts")
 
 
 def test_settings_shows_the_engine_and_installs_it_on_one_click(page, monkeypatch, tmp_path):

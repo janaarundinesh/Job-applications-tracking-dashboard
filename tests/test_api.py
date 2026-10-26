@@ -1247,6 +1247,68 @@ def test_a_saved_file_can_be_attached_to_a_job(api):
     assert api.post("/api/files/424242/attach", {"application_id": job["id"]}).status == 404
 
 
+def test_attaching_can_replace_the_previous_copy(api):
+    """A new version of the same document replaces the old one when asked."""
+    resume = api.post("/api/resumes", {"name": "master_software"}).data
+    first_file = save_pdf(api, resume, filename="master-v1.pdf", raw=b"%PDF-1.4 v1")
+    second_file = save_pdf(api, resume, filename="master-v2.pdf", raw=b"%PDF-1.4 v2")
+    job = api.create(company="Airbus", role="Simulation Developer")
+    other_job = api.create(company="Marvel Fusion", role="Engineer")
+
+    attach = lambda file_id, **fields: api.post(  # noqa: E731
+        "/api/files/%d/attach" % file_id,
+        dict({"application_id": job["id"], "kind": "resume"}, **fields),
+    )
+
+    assert attach(first_file["id"]).data["replaced"] == []
+    # Adding stays the default: a second copy is kept beside the first.
+    added = attach(second_file["id"])
+    assert added.data["replaced"] == []
+    assert len(api.get("/api/applications/%d" % job["id"]).data["documents"]) == 2
+
+    previous = [doc["id"] for doc in api.get("/api/applications/%d" % job["id"]).data["documents"]]
+    replaced = attach(second_file["id"], replace=True)
+    assert replaced.status == 200, replaced.data
+    assert sorted(replaced.data["replaced"]) == sorted(previous)
+    assert replaced.data["document"]["filename"] == "master-v2.pdf"
+
+    documents = api.get("/api/applications/%d" % job["id"]).data["documents"]
+    assert [doc["filename"] for doc in documents] == ["master-v2.pdf"]
+    # The replaced copies are gone from disk too, not just from the list.
+    for doc_id in previous:
+        missing = api.get(
+            "/api/applications/%d/documents/%d" % (job["id"], doc_id), token=""
+        )
+        assert missing.status == 404
+
+    # Only that kind on that job: a cover letter and another job are untouched.
+    cover = api.upload(job["id"], b"Dear Airbus", kind="cover_letter")
+    elsewhere = api.upload(
+        other_job["id"], b"%PDF-1.4 elsewhere", kind="resume", filename="other.pdf"
+    )
+    assert cover.status == 201 and elsewhere.status == 201
+    again = attach(first_file["id"], replace=True)
+    assert len(again.data["replaced"]) == 1
+    kinds = sorted(
+        doc["kind"] for doc in api.get("/api/applications/%d" % job["id"]).data["documents"]
+    )
+    assert kinds == ["cover_letter", "resume"]
+    assert [
+        doc["filename"]
+        for doc in api.get("/api/applications/%d" % other_job["id"]).data["documents"]
+    ] == ["other.pdf"]
+
+    # Nothing to replace is not an error; an unknown kind still is.
+    empty = attach(
+        second_file["id"],
+        replace=True,
+        application_id=other_job["id"],
+        kind="cover_letter",
+    )
+    assert empty.data["replaced"] == []
+    assert attach(first_file["id"], replace=True, kind="passport").status == 400
+
+
 def test_documents_by_job_lists_what_every_job_has(api):
     """The Save PDF dialog names what a job already holds before attaching."""
     assert api.get("/api/documents").data == {}
