@@ -64,7 +64,7 @@ Click any row or card to open the detail drawer: stage, dates, salary, source, c
 
 The app keeps separate profiles — for example one for your own search and one for freelance work. Each profile has its own jobs, trash, documents and goals; nothing is shared between them.
 
-**The picker comes first.** Opening the dashboard in a new browser session shows a user screen with one round avatar per profile, its job count and a lock badge when it is PIN protected. Click an avatar to open that profile; the plus circle beside them adds someone new. Reloading the same tab goes straight back into the profile you were using — the picker returns in a new tab or after closing the browser. **Log out** in Settings drops the session (and the unlock token) and returns to the picker.
+**The picker comes first.** Opening the dashboard in a new browser session shows a user screen with one round avatar per profile, what it says about itself (its headline or email, or *PIN protected*) and a lock badge when it has a PIN. It deliberately shows no job count: the screen is a door, and how many jobs sit behind a profile is that profile's business once its PIN is in. Click an avatar to open that profile; the plus circle beside them adds someone new. Reloading the same tab goes straight back into the profile you were using — the picker returns in a new tab or after closing the browser. **Log out** in Settings drops the session (and the unlock token) and returns to the picker.
 
 - The **profile button** in the header (your initials and the profile name) opens the same list as a dialog, with the active profile tagged **Current**, and **New profile** there creates another user.
 - **Clicking a profile** switches to it: the dashboard reloads with that profile's jobs and goals.

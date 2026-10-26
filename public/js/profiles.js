@@ -195,12 +195,12 @@ export function renderWelcome() {
   }
   list.innerHTML = state.profiles
     .map((profile) => {
-      const jobs = profile.jobs || 0;
+      // The picker is a door, not a report: it names who you are picking and
+      // stops there, so nothing about a profile's jobs leaks before its PIN.
       const detail = profile.locked
         ? "PIN protected"
         : profile.headline || profile.email || "No details yet";
-      const jobsLabel = jobs ? jobs + " job" + (jobs === 1 ? "" : "s") : "No jobs yet";
-      const meta = esc(detail) + "<br />" + esc(jobsLabel);
+      const meta = esc(detail);
       return (
         "<li>" +
         '<button type="button" class="welcome-card' +

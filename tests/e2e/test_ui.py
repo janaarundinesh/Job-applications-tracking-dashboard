@@ -38,6 +38,10 @@ def test_picker_opens_the_dashboard(page):
     page.wait_for_selector("#welcome-list [data-enter-profile]")
     assert page.locator("#welcome-list [data-enter-profile]").count() == 1
     assert page.locator("#welcome-add").count() == 1
+    # The picker names who you are picking and stops there: no job count to
+    # hint at what sits behind a profile's PIN.
+    metas = page.locator("#welcome-list .welcome-card-meta").all_inner_texts()
+    assert metas and all("job" not in text.lower() for text in metas)
 
     enter_profile(page)
     assert page.locator(".stat-grid .stat-card").count() == 6
