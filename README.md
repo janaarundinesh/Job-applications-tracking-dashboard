@@ -6,7 +6,7 @@ No accounts, no build step, no Python dependencies. Python 3.8+ standard library
 
 ## Run it
 
-On macOS, double-click **Job Pipeline.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window, and the server keeps running after the icon is done, logging to `data/server.log`. That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
+On macOS, double-click **Job Pipeline.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window, and the server keeps running after the icon is done, logging to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
 
 The launchers are the same thing with a visible console: **Start Job Pipeline.command** on macOS, **Start Job Pipeline.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
 

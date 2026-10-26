@@ -56,6 +56,12 @@ fi
 
 mkdir -p "$ROOT/data"
 
+# The dashboard's heartbeat is logged here too, so keep the file from growing
+# without end: one rotation when it passes 2 MB.
+if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" | tr -d ' ')" -gt 2097152 ]; then
+  mv -f "$LOG" "$LOG.1"
+fi
+
 # Compile can build a real PDF with Tectonic. It is optional: fetch it once into
 # tools/tectonic, and carry on (in-app preview) if that is not possible.
 "$PYTHON" install_tectonic.py --quiet >>"$LOG" 2>&1
