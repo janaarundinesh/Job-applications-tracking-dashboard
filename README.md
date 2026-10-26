@@ -219,6 +219,7 @@ tests/           pytest suite exercising the API end to end
 data/            Created on first run: tracker.db, uploads/ and backups/
 .githooks/       pre-commit hook that runs the suite
 .github/         CI workflows that run both suites
+AGENTS.md        Working conventions for automated assistants
 requirements-dev.txt  pytest and Playwright, only needed for running the tests
 ```
 
