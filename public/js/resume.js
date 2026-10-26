@@ -22,6 +22,8 @@ const rs = {
   confirmingDelete: false,
   previewTimer: null,
   issueCount: 0,
+  // The last real PDF from a LaTeX engine, while it still matches the source.
+  pdf: null,
 };
 
 
@@ -61,6 +63,7 @@ export function resetResumeState() {
   rs.loading = false;
   rs.renderedId = null;
   rs.draft = "";
+  clearPdf();
 }
 
 
@@ -250,6 +253,7 @@ function renderEditor() {
   if (!doc) {
     $("#resume-preview-page").innerHTML = "";
     $("#resume-preview-title").textContent = "Preview";
+    clearPdf();
     setStatus(rs.loading ? "Loading…" : "No resume open");
     return;
   }
@@ -259,6 +263,7 @@ function renderEditor() {
     rs.renderedId = doc.id;
     rs.draft = doc.source;
     rs.dirty = false;
+    clearPdf();
     renderPreview();
   }
   $("#resume-name").value = doc.name;
@@ -333,6 +338,62 @@ function applyZoom() {
   page.style.setProperty("--resume-zoom", String(effective));
   const label = $("#resume-zoom");
   if (label) label.textContent = Math.round(effective * 100) + "%";
+}
+
+
+/* ------------------------------------------------------- real LaTeX output */
+
+function clearPdf() {
+  if (rs.pdf && rs.pdf.url) URL.revokeObjectURL(rs.pdf.url);
+  rs.pdf = null;
+  const pane = $("#resume-pdf");
+  if (pane) pane.hidden = true;
+  const frame = $("#resume-pdf-frame");
+  if (frame) frame.removeAttribute("src");
+  const canvas = $("#resume-canvas");
+  if (canvas) canvas.classList.remove("is-pdf");
+  const page = $("#resume-preview-page");
+  if (page) page.hidden = false;
+  const zoom = $(".resume-zoom");
+  if (zoom) zoom.hidden = false;
+}
+
+
+function base64Bytes(value) {
+  const binary = window.atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+
+function showPdf(result, doc, source) {
+  clearPdf();
+  const blob = new Blob([base64Bytes(result.pdf)], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  rs.pdf = { url, docId: doc.id, source, engine: result.engine };
+  const frame = $("#resume-pdf-frame");
+  if (frame) frame.src = url;
+  const pane = $("#resume-pdf");
+  if (pane) pane.hidden = false;
+  const page = $("#resume-preview-page");
+  if (page) page.hidden = true;
+  const canvas = $("#resume-canvas");
+  if (canvas) canvas.classList.add("is-pdf");
+  const zoom = $(".resume-zoom");
+  if (zoom) zoom.hidden = true;
+}
+
+
+function renderCompileLog(title, log) {
+  const box = $("#resume-issues");
+  if (!box) return;
+  box.hidden = false;
+  box.innerHTML =
+    '<strong class="resume-issues-title">' + esc(title || "LaTeX error") + "</strong>" +
+    (log ? '<pre class="resume-log">' + esc(log) + "</pre>" : "");
 }
 
 
@@ -631,6 +692,8 @@ export function bindResumeEvents() {
 
   source.addEventListener("input", () => {
     rs.draft = source.value;
+    // Any edit makes a compiled PDF stale: back to the live preview.
+    clearPdf();
     scheduleSave();
     schedulePreview();
   });
@@ -648,6 +711,7 @@ export function bindResumeEvents() {
       source.value = source.value.slice(0, start) + "  " + source.value.slice(end);
       source.selectionStart = source.selectionEnd = start + 2;
       rs.draft = source.value;
+      clearPdf();
       scheduleSave();
       schedulePreview();
       return;
@@ -659,16 +723,48 @@ export function bindResumeEvents() {
   });
 
   $("#resume-compile").addEventListener("click", async () => {
+    const doc = activeDoc();
+    if (!doc) return;
     // Save first: the save sets "Saved 14:32", which would otherwise land on
     // top of the compile message a moment later.
     await saveNow();
     renderPreview();
-    const ms = Number($("#resume-compile").dataset.ms || 0);
-    setStatus(
-      rs.issueCount
-        ? rs.issueCount + (rs.issueCount === 1 ? " warning" : " warnings")
-        : "Compiled in " + ms + " ms"
-    );
+    const source = rs.draft;
+    const button = $("#resume-compile");
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "Compiling…";
+    try {
+      const result = await api("/api/resumes/" + doc.id + "/compile", {
+        method: "POST",
+        body: JSON.stringify({ source: source }),
+      });
+      if (rs.draft !== source) {
+        toast("The source changed while compiling — compile again", true);
+        return;
+      }
+      showPdf(result, doc, source);
+      setStatus(
+        result.engine + " · PDF in " + (Number(result.elapsed_ms || 0) / 1000).toFixed(2) + " s"
+      );
+    } catch (error) {
+      // No engine, or TeX refused: keep the in-app preview, which is already
+      // rendered, and say why the PDF is missing.
+      clearPdf();
+      renderPreview();
+      if (error.status === 501) {
+        setStatus("No LaTeX engine — showing the in-app preview");
+      } else if (error.status === 422) {
+        renderCompileLog(error.message, error.log || "");
+        setStatus("LaTeX error — showing the in-app preview");
+      } else {
+        setStatus("Compile failed — showing the in-app preview");
+        toast(error.message, true);
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
   });
 
   $("#resume-name").addEventListener("change", (event) => renameActive(event.target.value));

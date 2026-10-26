@@ -2,6 +2,11 @@
 
 import base64
 import datetime
+import shutil
+
+import pytest
+
+import server
 
 
 def test_health(api):
@@ -900,3 +905,94 @@ def test_resumes_are_kept_per_profile(api):
     assert folder.is_dir()
     assert api.delete("/api/profiles/1", headers=mine_headers).status == 200
     assert not folder.exists()
+
+
+TECTONIC = shutil.which("tectonic")
+needs_tex = pytest.mark.skipif(TECTONIC is None, reason="tectonic is not installed")
+
+SIMPLE_TEX = r"""\documentclass{article}
+\begin{document}
+{\LARGE Test Person}\\
+\section{Experience}
+\begin{itemize}
+  \item Built things.
+\end{itemize}
+\end{document}
+"""
+
+
+@needs_tex
+def test_compiling_a_resume_returns_a_pdf(api):
+    resume = api.post("/api/resumes", {"name": "master", "source": SIMPLE_TEX}).data
+    response = api.post("/api/resumes/%d/compile" % resume["id"], {"source": SIMPLE_TEX})
+    assert response.status == 200, response.data
+    pdf = base64.b64decode(response.data["pdf"])
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 1000
+    assert response.data["engine"].startswith("tectonic")
+    assert response.data["elapsed_ms"] >= 0
+
+    # No source in the body means "compile what is saved".
+    saved = api.post("/api/resumes/%d/compile" % resume["id"], {})
+    assert saved.status == 200
+    assert base64.b64decode(saved.data["pdf"]).startswith(b"%PDF")
+
+
+@needs_tex
+def test_a_failed_compile_reports_the_tex_log(api):
+    resume = api.post("/api/resumes", {"name": "master"}).data
+    broken = (
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\nosuchcommand{x}\n"
+        "\\end{document}\n"
+    )
+    response = api.post("/api/resumes/%d/compile" % resume["id"], {"source": broken})
+    assert response.status == 422
+    assert response.data["error"] == "LaTeX could not compile this resume"
+    assert "Undefined control sequence" in response.data["log"]
+    assert "l.3" in response.data["log"]
+
+
+@needs_tex
+def test_compiling_finds_an_uploaded_support_file(api):
+    resume = api.post("/api/resumes", {"name": "master"}).data
+    uploaded = api.post(
+        "/api/resumes/%d/files" % resume["id"],
+        {
+            "filename": "profile.png",
+            "content_type": "image/png",
+            "data": base64.b64encode(PNG).decode("ascii"),
+        },
+    )
+    assert uploaded.status == 201
+    source = (
+        "\\documentclass{article}\n"
+        "\\usepackage{graphicx}\n"
+        "\\begin{document}\n"
+        "Photo: \\includegraphics[width=2cm]{profile.png}\n"
+        "\\end{document}\n"
+    )
+    response = api.post("/api/resumes/%d/compile" % resume["id"], {"source": source})
+    assert response.status == 200, response.data
+    assert base64.b64decode(response.data["pdf"]).startswith(b"%PDF")
+
+
+def test_compile_says_when_no_latex_engine_is_installed(api, monkeypatch):
+    resume = api.post("/api/resumes", {"name": "master"}).data
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    response = api.post("/api/resumes/%d/compile" % resume["id"], {})
+    assert response.status == 501
+    assert "No LaTeX engine" in response.data["error"]
+
+
+@needs_tex
+def test_another_profile_cannot_compile_your_resume(api):
+    resume = api.post("/api/resumes", {"name": "master"}).data
+    other = api.post("/api/profiles", {"name": "Second"}).data
+    response = api.post(
+        "/api/resumes/%d/compile" % resume["id"],
+        {},
+        headers={"X-Profile-Id": str(other["id"])},
+    )
+    assert response.status == 404

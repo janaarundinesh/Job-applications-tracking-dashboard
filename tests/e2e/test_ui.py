@@ -8,6 +8,8 @@ import base64
 import datetime
 import json
 
+import pytest
+
 
 def enter_profile(page):
     """The user picker is the first screen of a session; step through it."""
@@ -821,3 +823,75 @@ def test_resume_editor_uses_the_whole_window(page):
         }"""
     )
     assert left > 0 and right < 1650
+
+
+def test_compile_shows_a_real_pdf_and_falls_back_on_tex_errors(page):
+    source = (
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "{\\LARGE Test Person}\\\\\n"
+        "\\section{Experience}\n"
+        "\\begin{itemize}\n"
+        "  \\item Built things.\n"
+        "\\end{itemize}\n"
+        "\\end{document}\n"
+    )
+    created = api_post(page, "/api/resumes", {"name": "master_check.tex", "source": source})
+    assert created["status"] == 201
+    resume_id = created["body"]["id"]
+
+    probe = api_post(page, "/api/resumes/%d/compile" % resume_id, {"source": source})
+    if probe["status"] == 501:
+        pytest.skip("no LaTeX engine on this machine")
+    assert probe["status"] == 200, probe
+    assert base64.b64decode(probe["body"]["pdf"]).startswith(b"%PDF")
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector("#panel-resume:not([hidden])")
+    page.wait_for_selector("#resume-editor-area:not([hidden])")
+
+    page.click("#resume-compile")
+    page.wait_for_selector("#resume-pdf:not([hidden])", timeout=60000)
+    assert page.get_attribute("#resume-pdf-frame", "src").startswith("blob:")
+    status = page.inner_text("#resume-status")
+    assert "PDF" in status and status.startswith("tectonic")
+    # The browser's viewer brings its own zoom, so the app's controls step aside.
+    assert page.locator(".resume-zoom").is_hidden()
+    assert page.evaluate(
+        """() => {
+          const pane = document.querySelector('#resume-pdf').getBoundingClientRect();
+          const canvas = document.querySelector('#resume-canvas').getBoundingClientRect();
+          return pane.width > canvas.width - 40 && pane.height > 300;
+        }"""
+    )
+
+    # Editing makes the PDF stale: the live preview comes back.
+    page.click("#resume-source")
+    page.keyboard.press("Control+End")
+    page.keyboard.type("% an edit\n")
+    page.wait_for_function("() => document.querySelector('#resume-pdf').hidden")
+    assert page.locator("#resume-preview-page").is_visible()
+    assert page.locator(".resume-zoom").is_visible()
+
+    # A document TeX refuses falls back to the in-app render, with the log.
+    page.evaluate(
+        """() => {
+          const source = document.querySelector('#resume-source');
+          source.value = '\\\\documentclass{article}\\n\\\\begin{document}\\n\\\\nosuchcommand{x}\\n\\\\end{document}\\n';
+          source.dispatchEvent(new Event('input', { bubbles: true }));
+        }"""
+    )
+    page.click("#resume-compile")
+    page.wait_for_function(
+        "() => /LaTeX error/.test(document.querySelector('#resume-status').textContent)",
+        timeout=60000,
+    )
+    assert "Undefined control sequence" in page.inner_text("#resume-issues")
+    assert page.locator("#resume-pdf").is_hidden()
+    assert page.locator("#resume-preview-page").is_visible()

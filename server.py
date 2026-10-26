@@ -20,6 +20,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -197,10 +198,12 @@ CONTENT_TYPES = {
 
 
 class ApiError(Exception):
-    def __init__(self, status, message):
+    def __init__(self, status, message, extra=None):
         super().__init__(message)
         self.status = status
         self.message = message
+        # Structured detail for the client (a TeX log, for instance).
+        self.extra = extra or {}
 
 
 def now_iso():
@@ -1593,6 +1596,133 @@ def list_resumes(db_path, profile_id):
         conn.close()
 
 
+# --------------------------------------------------------------------------
+# LaTeX compilation
+# --------------------------------------------------------------------------
+
+MAX_COMPILE_SECONDS = 60
+COMPILE_LOCK = threading.Lock()
+
+
+def latex_engine():
+    """The TeX engine to compile with, if this machine has one installed."""
+    return shutil.which("tectonic")
+
+
+def tex_error_summary(text, limit=3000):
+    """The lines of a TeX log worth showing: what broke, and where."""
+    lines = [line.rstrip() for line in str(text or "").splitlines()]
+    picked = []
+    for index, line in enumerate(lines):
+        if line.startswith("!") or "error:" in line.lower() or line.startswith("l."):
+            picked.append(line.strip())
+        elif picked and picked[-1].startswith("!") and line.strip():
+            # TeX puts the explanation on the line after the bang.
+            picked.append(line.strip())
+    if not picked:
+        picked = [line.strip() for line in lines if line.strip()][-8:]
+    seen = set()
+    unique = []
+    for line in picked:
+        if line in seen:
+            continue
+        seen.add(line)
+        unique.append(line)
+    return "\n".join(unique)[:limit].strip()
+
+
+def compile_resume(db_path, profile_id, resume_id, payload):
+    """Compile a resume to a real PDF with tectonic, when it is installed.
+
+    Returns the PDF as base64 plus how long it took. Raises 501 when no engine is
+    available (the browser preview is the fallback) and 422 when the source does
+    not compile, with the log lines that explain why.
+    """
+    engine = latex_engine()
+    if not engine:
+        raise ApiError(501, "No LaTeX engine is installed on this computer")
+    resume = get_resume(db_path, profile_id, resume_id)
+    source = resume["source"]
+    if isinstance(payload, dict) and payload.get("source") is not None:
+        source = clean_resume_source(payload)
+
+    started = time.time()
+    workdir = tempfile.mkdtemp(prefix="jobpipe-tex-")
+    try:
+        # Support files keep their uploaded names: \includegraphics{photo.png}
+        # has to resolve against the file as the user wrote it.
+        conn = connect(db_path)
+        try:
+            files = conn.execute(
+                "SELECT filename, stored_name FROM resume_files WHERE resume_id = ?",
+                (resume_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        folder = resume_file_folder(db_path, resume_id)
+        for row in files:
+            source_path = os.path.join(folder, row["stored_name"])
+            safe_name = os.path.basename(row["filename"])
+            if safe_name and os.path.exists(source_path):
+                shutil.copyfile(source_path, os.path.join(workdir, safe_name))
+
+        main = os.path.join(workdir, "resume.tex")
+        with open(main, "w", encoding="utf-8") as handle:
+            handle.write(source)
+        outdir = os.path.join(workdir, "out")
+        os.makedirs(outdir, exist_ok=True)
+        command = [
+            engine,
+            "--untrusted",
+            "--keep-logs",
+            "--chatter",
+            "minimal",
+            "--outdir",
+            outdir,
+            main,
+        ]
+        try:
+            with COMPILE_LOCK:
+                result = subprocess.run(
+                    command,
+                    cwd=workdir,
+                    capture_output=True,
+                    text=True,
+                    timeout=MAX_COMPILE_SECONDS,
+                )
+        except subprocess.TimeoutExpired:
+            raise ApiError(
+                422, "LaTeX took longer than %d seconds" % MAX_COMPILE_SECONDS
+            )
+        pdf_path = os.path.join(outdir, "resume.pdf")
+        log_path = os.path.join(workdir, "resume.log")
+        log_text = ""
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+                log_text = handle.read()
+        if result.returncode != 0 or not os.path.exists(pdf_path):
+            summary = tex_error_summary(log_text or result.stderr or result.stdout)
+            raise ApiError(
+                422, "LaTeX could not compile this resume", extra={"log": summary}
+            )
+        with open(pdf_path, "rb") as handle:
+            body = handle.read()
+        version = "tectonic"
+        try:
+            version = "tectonic " + subprocess.run(
+                [engine, "--version"], capture_output=True, text=True, timeout=10
+            ).stdout.strip().split()[-1]
+        except (OSError, subprocess.SubprocessError, IndexError):
+            pass
+        return {
+            "pdf": base64.b64encode(body).decode("ascii"),
+            "engine": version,
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def get_resume(db_path, profile_id, resume_id):
     conn = connect(db_path)
     try:
@@ -2263,6 +2393,17 @@ class Handler(BaseHTTPRequestHandler):
                             create_resume(self.db_path, profile_id, self.read_json()), 201
                         )
                     raise ApiError(405, "Method not allowed")
+                if len(parts) == 3 and parts[2] == "compile":
+                    if self.command != "POST":
+                        raise ApiError(405, "Method not allowed")
+                    try:
+                        resume_id = int(parts[1])
+                    except ValueError:
+                        raise ApiError(404, "Unknown endpoint")
+                    payload = self.read_json()
+                    return self.send_json(
+                        compile_resume(self.db_path, profile_id, resume_id, payload)
+                    )
                 if len(parts) >= 3 and parts[2] == "files":
                     try:
                         resume_id = int(parts[1])
@@ -2443,6 +2584,10 @@ class Handler(BaseHTTPRequestHandler):
 
             raise ApiError(404, "Unknown endpoint")
         except ApiError as error:
+            if error.extra:
+                payload = {"error": error.message}
+                payload.update(error.extra)
+                return self.send_json(payload, error.status)
             return self.send_error_json(error.status, error.message)
         except (BrokenPipeError, ConnectionResetError):
             # The browser closed the socket (a preview iframe or tab being closed).

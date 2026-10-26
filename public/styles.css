@@ -3313,6 +3313,35 @@ body.tab-resume .resume-view {
   background-size: 16px 16px;
 }
 
+/* A real PDF from a LaTeX engine replaces the in-app page for as long as it is
+   current; the browser's viewer brings its own pages, zoom and search. */
+.resume-canvas.is-pdf { display: flex; padding: 12px; overflow: hidden; }
+.resume-canvas.is-pdf .resume-page { display: none; }
+
+.resume-pdf {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+}
+.resume-pdf[hidden] { display: none; }
+.resume-pdf iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+.resume-log {
+  margin: 6px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
 /* the page itself is paper: light in both themes */
 
 .resume-page {

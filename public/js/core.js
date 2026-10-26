@@ -455,6 +455,8 @@ export async function request(path, options) {
     const message = payload && payload.error ? payload.error : "Request failed (" + response.status + ")";
     const error = new Error(message);
     error.status = response.status;
+    // A failed compile carries the TeX log so the editor can show it.
+    if (payload && typeof payload.log === "string") error.log = payload.log;
     // The profile locked while this tab was open (or its token expired).
     if (response.status === 423 && state.profileId && path !== "/api/profiles") {
       clearToken(state.profileId);
