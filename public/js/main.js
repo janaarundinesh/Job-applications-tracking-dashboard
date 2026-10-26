@@ -2,7 +2,7 @@
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, state, statusSelectOptions, toast, todayISO, tokenFor } from "./core.js";
-import { bulkDelete, bulkMarkApplied, bulkSetStatus, closePosition, deleteDocument, loadApps, loadProfiles, markApplied, markReviewed, patchStatus, persistProfile, renderProfileChrome, restoreJob, uploadDocuments, visibleApps } from "./data.js";
+import { attachSavedFileToJob, bulkDelete, bulkMarkApplied, bulkSetStatus, closePosition, deleteDocument, loadApps, loadProfiles, markApplied, markReviewed, patchStatus, persistProfile, renderProfileChrome, restoreJob, uploadDocuments, visibleApps } from "./data.js";
 import { closeModal, confirmEmptyTrash, confirmPurge, confirmTrash, extractFromLink, openModal, setModalMode, submitForm, syncPhaseFields } from "./dialogs.js";
 import { closeDrawer, closePreview, openDrawer, openPreview } from "./drawer.js";
 import { exportCSV, exportJSON, handleImportFile } from "./io.js";
@@ -138,6 +138,11 @@ export function bindEvents() {
     if (deleteDocButton) {
       event.stopPropagation();
       if (state.drawerId) deleteDocument(state.drawerId, Number(deleteDocButton.dataset.docDelete));
+      return;
+    }
+    if (event.target.closest('[data-action="pick-saved"]')) {
+      event.stopPropagation();
+      if (state.drawerId) attachSavedFileToJob(state.drawerId);
       return;
     }
     const previewDocButton = event.target.closest("[data-preview-doc]");

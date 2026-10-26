@@ -1579,6 +1579,86 @@ def delete_resume_file(db_path, profile_id, resume_id, file_id):
     return {"deleted": file_id}
 
 
+def list_saved_files(db_path, profile_id):
+    """Every file kept with this profile's resumes, newest first.
+
+    This is the library behind "choose from saved files": the PDFs the resume
+    editor saved, plus any support file uploaded beside a .tex.
+    """
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT f.*, r.name AS resume_name, r.application_id AS resume_job_id,"
+            " a.company AS job_company, a.role AS job_role"
+            " FROM resume_files f"
+            " JOIN resumes r ON r.id = f.resume_id"
+            " LEFT JOIN applications a ON a.id = r.application_id"
+            " WHERE r.profile_id = ?"
+            " ORDER BY f.uploaded_at DESC, f.id DESC",
+            (profile_id,),
+        ).fetchall()
+        files = []
+        for row in rows:
+            data = resume_file_dict(row, row["resume_id"])
+            data["resume_id"] = row["resume_id"]
+            data["resume_name"] = row["resume_name"]
+            data["job_company"] = row["job_company"] or ""
+            data["job_role"] = row["job_role"] or ""
+            files.append(data)
+        return files
+    finally:
+        conn.close()
+
+
+def find_saved_file(db_path, profile_id, file_id):
+    """One library file, with its bytes, scoped to this profile."""
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT f.* FROM resume_files f JOIN resumes r ON r.id = f.resume_id"
+            " WHERE f.id = ? AND r.profile_id = ?",
+            (file_id, profile_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise ApiError(404, "File not found")
+    path = os.path.join(resume_file_folder(db_path, row["resume_id"]), row["stored_name"])
+    if not os.path.isfile(path):
+        raise ApiError(404, "That file is missing on disk")
+    return row, path
+
+
+def attach_saved_file(db_path, profile_id, file_id, payload):
+    """File one of the saved files onto a job, without uploading it again."""
+    if payload is not None and not isinstance(payload, dict):
+        raise ApiError(400, "Expected a JSON object")
+    fields = payload or {}
+    raw_id = fields.get("application_id")
+    if isinstance(raw_id, bool) or raw_id in (None, "", 0):
+        raise ApiError(400, "A job is required to attach this file")
+    try:
+        app_id = int(raw_id)
+    except (TypeError, ValueError):
+        raise ApiError(400, "application_id must be a job id")
+    kind = fields.get("kind") or "other"
+    row, path = find_saved_file(db_path, profile_id, file_id)
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    document = save_document(
+        db_path,
+        profile_id,
+        app_id,
+        {
+            "kind": kind,
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "data": base64.b64encode(raw).decode("ascii"),
+        },
+    )
+    return {"document": document, "application_id": app_id}
+
+
 def list_resumes(db_path, profile_id):
     conn = connect(db_path)
     try:
@@ -2472,6 +2552,26 @@ class Handler(BaseHTTPRequestHandler):
                             delete_resume(self.db_path, profile_id, resume_id)
                         )
                     raise ApiError(405, "Method not allowed")
+                raise ApiError(404, "Unknown endpoint")
+
+            if parts[0] == "files":
+                # The library a job's Documents section picks from.
+                if len(parts) == 1:
+                    if self.command != "GET":
+                        raise ApiError(405, "Method not allowed")
+                    return self.send_json(list_saved_files(self.db_path, profile_id))
+                if len(parts) == 3 and parts[2] == "attach":
+                    if self.command != "POST":
+                        raise ApiError(405, "Method not allowed")
+                    try:
+                        file_id = int(parts[1])
+                    except ValueError:
+                        raise ApiError(404, "Unknown endpoint")
+                    return self.send_json(
+                        attach_saved_file(
+                            self.db_path, profile_id, file_id, self.read_json()
+                        )
+                    )
                 raise ApiError(404, "Unknown endpoint")
 
             if parts[0] == "trash":

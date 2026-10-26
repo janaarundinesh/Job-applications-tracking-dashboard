@@ -989,6 +989,125 @@ def test_compile_says_when_no_latex_engine_is_installed(api, monkeypatch, tmp_pa
     assert "No LaTeX engine" in response.data["error"]
 
 
+def save_pdf(api, resume, filename="master_software.pdf", raw=b"%PDF-1.4 saved"):
+    """What the Resume tab's Save PDF button sends."""
+    response = api.post(
+        "/api/resumes/%d/files" % resume["id"],
+        {
+            "filename": filename,
+            "content_type": "application/pdf",
+            "data": base64.b64encode(raw).decode("ascii"),
+        },
+    )
+    assert response.status == 201, response.data
+    return response.data
+
+
+def test_a_saved_pdf_shows_up_in_the_file_library(api):
+    resume = api.post("/api/resumes", {"name": "master_software"}).data
+    saved = save_pdf(api, resume)
+    assert saved["filename"] == "master_software.pdf"
+    assert saved["content_type"] == "application/pdf"
+
+    library = api.get("/api/files")
+    assert library.status == 200
+    assert [file["filename"] for file in library.data] == ["master_software.pdf"]
+    entry = library.data[0]
+    assert entry["id"] == saved["id"]
+    assert entry["resume_id"] == resume["id"]
+    assert entry["resume_name"] == "master_software.tex"
+    assert entry["size"] == len(b"%PDF-1.4 saved")
+    assert entry["job_company"] == ""
+    assert api.get(entry["url"], token="").body == b"%PDF-1.4 saved"
+
+    # A file saved with a job's tailored resume says which job it was for.
+    job = api.create(company="Airbus", role="Simulation Developer")
+    tailored = api.post(
+        "/api/resumes", {"name": "airbus", "application_id": job["id"]}
+    ).data
+    save_pdf(api, tailored, filename="airbus-tailored.pdf", raw=b"%PDF-1.4 airbus")
+    library = api.get("/api/files").data
+    assert [(file["filename"], file["resume_name"]) for file in library] == [
+        ("airbus-tailored.pdf", "airbus.tex"),
+        # A tailored copy starts with the master's support files, so the master's
+        # saved PDF comes along until it is removed.
+        ("master_software.pdf", "airbus.tex"),
+        ("master_software.pdf", "master_software.tex"),
+    ]
+    assert library[0]["job_company"] == "Airbus"
+    assert library[0]["job_role"] == "Simulation Developer"
+
+    # Files are per profile, like everything else.
+    other = api.post("/api/profiles", {"name": "Second"}).data
+    assert api.get("/api/files", headers={"X-Profile-Id": str(other["id"])}).data == []
+
+
+def test_a_saved_file_can_be_attached_to_a_job(api):
+    resume = api.post("/api/resumes", {"name": "master_software"}).data
+    saved = save_pdf(api, resume)
+    job = api.create(company="Airbus", role="Junior Simulation Developer")
+    attach = "/api/files/%d/attach" % saved["id"]
+
+    assert api.get(attach).status == 405
+    assert api.post(attach, {}).status == 400
+    assert api.post(attach, {"application_id": "not-a-job"}).status == 400
+    assert api.post(attach, {"application_id": 424242}).status == 404
+    assert api.post(attach, {"application_id": job["id"], "kind": "passport"}).status == 400
+
+    attached = api.post(attach, {"application_id": job["id"], "kind": "resume"})
+    assert attached.status == 200, attached.data
+    document = attached.data["document"]
+    assert document["filename"] == "master_software.pdf"
+    assert document["kind"] == "resume"
+    assert document["content_type"] == "application/pdf"
+    assert document["application_id"] == job["id"]
+    # The job's copy is its own file: deleting the job cannot lose the saved one.
+    assert api.get(document["url"], token="").body == b"%PDF-1.4 saved"
+    detail = api.get("/api/applications/%d" % job["id"]).data
+    assert [doc["filename"] for doc in detail["documents"]] == ["master_software.pdf"]
+    assert [file["filename"] for file in api.get("/api/files").data] == ["master_software.pdf"]
+
+    # Without a kind it lands under Other.
+    again = api.post(attach, {"application_id": job["id"]})
+    assert again.status == 200
+    assert again.data["document"]["kind"] == "other"
+
+    # Someone else's file, and someone else's job, are both out of reach.
+    other = api.post("/api/profiles", {"name": "Second"}).data
+    stranger = api.create(company="Elsewhere", role="Engineer")
+    denied_file = api.post(
+        attach,
+        {"application_id": job["id"]},
+        headers={"X-Profile-Id": str(other["id"])},
+    )
+    assert denied_file.status == 404
+    denied_job = api.post(
+        "/api/files/%d/attach" % saved["id"],
+        {"application_id": stranger["id"]},
+        headers={"X-Profile-Id": str(other["id"])},
+    )
+    assert denied_job.status == 404
+
+    assert api.post("/api/files/424242/attach", {"application_id": job["id"]}).status == 404
+
+
+@needs_tex
+def test_compiling_does_not_save_anything(api):
+    """Compile is a preview; saving is a separate, named action."""
+    resume = api.post("/api/resumes", {"name": "master_software"}).data
+    saved = save_pdf(api, resume, filename="already-saved.pdf", raw=b"%PDF-1.4 mine")
+
+    response = api.post("/api/resumes/%d/compile" % resume["id"], {"source": SIMPLE_TEX})
+    assert response.status == 200, response.data
+    assert "saved" not in response.data
+    assert base64.b64decode(response.data["pdf"]).startswith(b"%PDF")
+
+    listed = api.get("/api/resumes/%d" % resume["id"]).data["files"]
+    assert [file["filename"] for file in listed] == ["already-saved.pdf"]
+    assert listed[0]["id"] == saved["id"]
+    assert api.get(listed[0]["url"], token="").body == b"%PDF-1.4 mine"
+
+
 @needs_tex
 def test_another_profile_cannot_compile_your_resume(api):
     resume = api.post("/api/resumes", {"name": "master"}).data

@@ -1,8 +1,8 @@
 /* Job Pipeline — Loading, filtering and mutating data (jobs, documents, bulk actions).
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, CLOSED, DEFAULT_GOALS, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
-import { confirmAction } from "./dialogs.js";
+import { $, CLOSED, DEFAULT_GOALS, DOC_LABEL, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
+import { chooseSavedFile, confirmAction } from "./dialogs.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { openUnlock } from "./profiles.js";
 import { render, setTab } from "./workspace.js";
@@ -377,6 +377,39 @@ export async function uploadDocuments(appId, kind, files) {
   if (tooBig) toast(tooBig + " file" + (tooBig === 1 ? "" : "s") + " over the 10 MB limit skipped", true);
   if (failed) toast(failed + " file" + (failed === 1 ? "" : "s") + " could not be attached", true);
   if (done && state.drawerId === appId) openDrawer(appId);
+}
+
+
+/* Attach one of the files saved with a resume, instead of uploading it again. */
+export async function attachSavedFileToJob(appId) {
+  const app = state.apps.find((item) => item.id === appId) || null;
+  let files;
+  try {
+    files = await api("/api/files");
+  } catch (error) {
+    toast(error.message, true);
+    return;
+  }
+  if (!files.length) {
+    toast("Nothing saved yet — compile a resume and press Save PDF first", true);
+    return;
+  }
+  const choice = await chooseSavedFile({
+    title: "Attach a saved file",
+    text: app ? app.company + " — " + app.role : "",
+    files: files,
+  });
+  if (!choice) return;
+  try {
+    await api("/api/files/" + choice.file.id + "/attach", {
+      method: "POST",
+      body: JSON.stringify({ application_id: appId, kind: choice.kind }),
+    });
+    toast("Attached " + choice.file.filename + " as " + (DOC_LABEL[choice.kind] || "a file"));
+    openDrawer(appId);
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 

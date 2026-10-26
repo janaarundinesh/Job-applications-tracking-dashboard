@@ -199,6 +199,8 @@ export function drawerHTML(app, events, documents) {
     '<input type="file" data-doc-kind="cover_letter" hidden multiple /></label>' +
     '<label class="btn btn-ghost doc-upload" data-drop-kind="other">' + ICON.attach + "Other" +
     '<input type="file" data-doc-kind="other" hidden multiple /></label>' +
+    '<button type="button" class="btn btn-ghost doc-upload" data-action="pick-saved"' +
+    ' title="Attach a file saved with one of your resumes">' + ICON.file + "From saved files</button>" +
     "</div>" +
     '<p class="doc-drop-hint" data-drop-hint>Drag files here to attach them — drop onto a button to set its type.</p>' +
     "</div>" +

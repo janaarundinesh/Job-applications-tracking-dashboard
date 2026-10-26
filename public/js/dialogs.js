@@ -1,7 +1,7 @@
 /* Job Pipeline — Add/edit job dialog, link extraction, confirmations.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, api, state, statusSelectOptions, toast, todayISO } from "./core.js";
+import { $, $$, api, esc, formatSize, state, statusSelectOptions, toast, todayISO } from "./core.js";
 import { promptRejectDelete, updateLocal } from "./data.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { setPanelNote } from "./io.js";
@@ -184,6 +184,167 @@ export async function extractFromLink() {
     button.disabled = false;
     button.textContent = label;
   }
+}
+
+
+/* Shared plumbing for the small dialogs below: one backdrop at a time, Escape
+   closes, and the page picks up scrolling again when the last one is gone. */
+function openDialog(template, onKey) {
+  const fragment = template.content.cloneNode(true);
+  const backdrop = fragment.querySelector(".picker-backdrop");
+  let closed = false;
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", handler, true);
+    // Another dialog may still be open behind this one.
+    if (
+      $("#profiles-backdrop").hidden &&
+      $("#settings-backdrop").hidden &&
+      $("#modal-backdrop").hidden
+    ) {
+      document.body.classList.remove("no-scroll");
+    }
+  };
+  function handler(event) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      close();
+      onKey(null);
+    }
+  }
+  document.body.appendChild(fragment);
+  document.body.classList.add("no-scroll");
+  document.addEventListener("keydown", handler, true);
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      close();
+      onKey(null);
+    }
+  });
+  return {
+    backdrop,
+    finish(value) {
+      if (closed) return;
+      closed = true;
+      close();
+      onKey(value);
+    },
+  };
+}
+
+
+/* Pick one of the files saved with your resumes. Resolves with
+   { file, kind }, or null when the dialog is dismissed. */
+export function chooseSavedFile(config) {
+  const settings = config || {};
+  const template = $("#file-picker-template");
+  if (!template) return Promise.resolve(null);
+  const files = Array.isArray(settings.files) ? settings.files : [];
+
+  return new Promise((resolve) => {
+    const dialog = openDialog(template, resolve);
+    const backdrop = dialog.backdrop;
+    const input = backdrop.querySelector(".picker-input");
+    const list = backdrop.querySelector(".picker-list");
+    const empty = backdrop.querySelector(".picker-empty");
+    let kind = settings.kind || "resume";
+
+    const renderRows = () => {
+      const query = input.value.trim().toLowerCase();
+      const matches = files.filter(
+        (file) =>
+          !query ||
+          (file.filename + " " + (file.resume_name || "") + " " + (file.job_company || ""))
+            .toLowerCase()
+            .includes(query)
+      );
+      empty.textContent = files.length
+        ? "No saved file matches that search."
+        : "Nothing saved yet — compile a resume, press Save PDF, then come back.";
+      empty.hidden = Boolean(matches.length);
+      list.innerHTML = matches
+        .map((file) => {
+          const where = file.job_company
+            ? file.job_company + (file.job_role ? " · " + file.job_role : "")
+            : file.resume_name || "";
+          return (
+            '<li><button type="button" class="picker-item" data-picker-file="' + file.id + '">' +
+            '<span class="picker-item-name">' + esc(file.filename) + "</span>" +
+            '<span class="picker-item-sub">' + esc(where) + " · " +
+            esc(formatSize(file.size)) + "</span>" +
+            "</button></li>"
+          );
+        })
+        .join("");
+    };
+
+    backdrop.querySelector(".picker-title").textContent =
+      settings.title || "Choose a saved file";
+    const text = backdrop.querySelector(".picker-text");
+    text.textContent = settings.text || "";
+    text.hidden = !settings.text;
+    backdrop.querySelector(".picker-cancel").addEventListener("click", () => dialog.finish(null));
+    backdrop.querySelectorAll("[data-picker-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        kind = button.dataset.pickerKind;
+        backdrop.querySelectorAll("[data-picker-kind]").forEach((other) => {
+          other.classList.toggle("is-active", other === button);
+        });
+      });
+    });
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-picker-file]");
+      if (!button) return;
+      const file = files.find((item) => String(item.id) === button.dataset.pickerFile);
+      if (file) dialog.finish({ file: file, kind: kind });
+    });
+    input.addEventListener("input", renderRows);
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const first = list.querySelector("[data-picker-file]");
+      if (first) first.click();
+    });
+
+    renderRows();
+    window.setTimeout(() => input.focus(), 30);
+  });
+}
+
+
+/* Ask for a name. Resolves with the trimmed text, or null when cancelled. */
+export function promptName(config) {
+  const settings = config || {};
+  const template = $("#name-prompt-template");
+  if (!template) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const dialog = openDialog(template, resolve);
+    const backdrop = dialog.backdrop;
+    const field = backdrop.querySelector(".prompt-input");
+    backdrop.querySelector(".prompt-title").textContent = settings.title || "Name this file";
+    const text = backdrop.querySelector(".prompt-text");
+    text.textContent = settings.text || "";
+    text.hidden = !settings.text;
+    backdrop.querySelector(".prompt-label").textContent = settings.label || "Name";
+    field.value = settings.value || "";
+    backdrop.querySelector(".prompt-cancel").addEventListener("click", () => dialog.finish(null));
+    backdrop.querySelector("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = field.value.trim();
+      if (!value) {
+        field.focus();
+        return;
+      }
+      dialog.finish(value);
+    });
+    window.setTimeout(() => {
+      field.focus();
+      const dot = field.value.lastIndexOf(".");
+      if (dot > 0) field.setSelectionRange(0, dot);
+      else field.select();
+    }, 30);
+  });
 }
 
 

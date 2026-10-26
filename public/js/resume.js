@@ -3,6 +3,7 @@
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, MAX_UPLOAD, api, esc, fmtDate, formatSize, state, toast } from "./core.js";
+import { promptName } from "./dialogs.js";
 
 
 const rs = {
@@ -168,6 +169,18 @@ function renderAssets() {
 }
 
 
+/* Save PDF only means something while a freshly compiled PDF is on screen. */
+function renderSavePdfButton() {
+  const button = $("#resume-save-pdf");
+  if (!button) return;
+  const ready = Boolean(rs.pdf && rs.pdf.blob && rs.pdf.docId === rs.activeId);
+  button.disabled = !ready;
+  button.title = ready
+    ? "Keep this PDF with the resume's files, under a name you choose"
+    : "Compile first, then the PDF can be saved with this resume's files";
+}
+
+
 function renderRail() {
   const tree = $("#resume-tree");
   if (!tree) return;
@@ -241,6 +254,7 @@ function renderTabsRow() {
 function renderEditor() {
   const doc = activeDoc();
   renderAssets();
+  renderSavePdfButton();
   const empty = $("#resume-empty");
   const area = $("#resume-editor-area");
   const side = $("#resume-side");
@@ -346,6 +360,7 @@ function applyZoom() {
 function clearPdf() {
   if (rs.pdf && rs.pdf.url) URL.revokeObjectURL(rs.pdf.url);
   rs.pdf = null;
+  renderSavePdfButton();
   const pane = $("#resume-pdf");
   if (pane) pane.hidden = true;
   const frame = $("#resume-pdf-frame");
@@ -373,7 +388,7 @@ function showPdf(result, doc, source) {
   clearPdf();
   const blob = new Blob([base64Bytes(result.pdf)], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
-  rs.pdf = { url, docId: doc.id, source, engine: result.engine };
+  rs.pdf = { url, blob, docId: doc.id, source, engine: result.engine };
   const frame = $("#resume-pdf-frame");
   if (frame) frame.src = url;
   const pane = $("#resume-pdf");
@@ -583,6 +598,43 @@ async function removeResumeFile(fileId) {
 }
 
 
+async function saveCompiledPdf() {
+  const doc = activeDoc();
+  if (!doc) return;
+  const pdf = rs.pdf;
+  if (!pdf || !pdf.blob || pdf.docId !== doc.id) {
+    toast("Compile this resume first", true);
+    return;
+  }
+  const suggested = doc.name.replace(/\.tex$/i, "") + ".pdf";
+  const answer = await promptName({
+    title: "Save the compiled PDF",
+    text:
+      "It is kept with this resume's files, so you can attach it to any job from the job's Documents section.",
+    label: "File name",
+    value: suggested,
+  });
+  if (!answer) return;
+  const filename = /\.pdf$/i.test(answer) ? answer : answer + ".pdf";
+  try {
+    const data = await readFileBase64(pdf.blob);
+    const saved = await api("/api/resumes/" + doc.id + "/files", {
+      method: "POST",
+      body: JSON.stringify({
+        filename: filename,
+        content_type: "application/pdf",
+        data: data,
+      }),
+    });
+    doc.files = (doc.files || []).concat(saved);
+    renderAssets();
+    toast("Saved " + saved.filename + " with this resume");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+
 async function renameActive(value) {
   const doc = activeDoc();
   if (!doc) return;
@@ -744,6 +796,7 @@ export function bindResumeEvents() {
         return;
       }
       showPdf(result, doc, source);
+      renderSavePdfButton();
       setStatus(
         result.engine + " · PDF in " + (Number(result.elapsed_ms || 0) / 1000).toFixed(2) + " s"
       );
@@ -766,6 +819,8 @@ export function bindResumeEvents() {
       button.textContent = label;
     }
   });
+
+  $("#resume-save-pdf").addEventListener("click", saveCompiledPdf);
 
   $("#resume-name").addEventListener("change", (event) => renameActive(event.target.value));
   $("#resume-name").addEventListener("keydown", (event) => {

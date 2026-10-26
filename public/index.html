@@ -364,6 +364,7 @@
 
         <div class="resume-bar">
           <button type="button" class="btn btn-primary resume-compile" id="resume-compile">Compile</button>
+          <button type="button" class="btn resume-save-pdf" id="resume-save-pdf" disabled title="Compile first, then keep the PDF with this resume's files">Save PDF</button>
           <span class="resume-status" id="resume-status">Saved</span>
           <span class="resume-bar-spacer"></span>
           <input class="resume-name" id="resume-name" aria-label="Resume file name" spellcheck="false" autocomplete="off" />
@@ -890,6 +891,50 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
+
+<template id="file-picker-template">
+  <div class="modal-backdrop confirm-backdrop picker-backdrop">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Choose a saved file">
+      <div class="modal-body">
+        <h3 class="confirm-title picker-title"></h3>
+        <p class="confirm-text picker-text"></p>
+        <div class="picker-kinds" role="group" aria-label="Attach as">
+          <button type="button" class="picker-kind is-active" data-picker-kind="resume">Resume</button>
+          <button type="button" class="picker-kind" data-picker-kind="cover_letter">Cover letter</button>
+          <button type="button" class="picker-kind" data-picker-kind="other">Other</button>
+        </div>
+        <label class="search picker-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <input type="search" class="picker-input" placeholder="Search your saved files…" autocomplete="off" />
+        </label>
+        <ul class="picker-list"></ul>
+        <p class="picker-empty" hidden></p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost picker-cancel">Cancel</button>
+      </footer>
+    </div>
+  </div>
+</template>
+
+<template id="name-prompt-template">
+  <div class="modal-backdrop confirm-backdrop picker-backdrop">
+    <form class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Name this file">
+      <div class="modal-body">
+        <h3 class="confirm-title prompt-title"></h3>
+        <p class="confirm-text prompt-text"></p>
+        <label class="prompt-field">
+          <span class="prompt-label"></span>
+          <input class="prompt-input" type="text" spellcheck="false" autocomplete="off" />
+        </label>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost prompt-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary prompt-ok">Save</button>
+      </footer>
+    </form>
+  </div>
+</template>
 
 <template id="confirm-template">
   <div class="modal-backdrop confirm-backdrop">

@@ -895,3 +895,101 @@ def test_compile_shows_a_real_pdf_and_falls_back_on_tex_errors(page):
     assert "Undefined control sequence" in page.inner_text("#resume-issues")
     assert page.locator("#resume-pdf").is_hidden()
     assert page.locator("#resume-preview-page").is_visible()
+
+
+
+def open_resume_in_editor(page, resume_id, name):
+    """Switch to the Resume tab and make sure this resume is the open one."""
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector("#panel-resume:not([hidden])")
+    page.wait_for_selector('#resume-tree button[data-resume-id="%d"]' % resume_id)
+    page.click('#resume-tree button[data-resume-id="%d"]' % resume_id)
+    page.wait_for_function(
+        "() => document.querySelector('#resume-name').value === %r" % name
+    )
+
+
+
+def test_saving_the_pdf_and_attaching_it_from_the_job(page):
+    """Compile, name the PDF, then pick it from the job's Documents section."""
+    source = (
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "{\\LARGE Arun Dinesh}\\\\\n"
+        "\\section{Experience}\n"
+        "\\begin{itemize}\n"
+        "  \\item Simulation software in C++.\n"
+        "\\end{itemize}\n"
+        "\\end{document}\n"
+    )
+    probe = api_post(page, "/api/resumes", {"name": "probe.tex", "source": source})
+    assert probe["status"] == 201
+    compiled = api_post(
+        page, "/api/resumes/%d/compile" % probe["body"]["id"], {"source": source}
+    )
+    if compiled["status"] == 501:
+        pytest.skip("no LaTeX engine on this machine")
+    assert compiled["status"] == 200, compiled
+
+    created = api_post(page, "/api/resumes", {"name": "master_cv.tex", "source": source})
+    resume_id = created["body"]["id"]
+    assert created["body"]["files"] == []
+    job = api_post(
+        page,
+        "/api/applications",
+        {"company": "Airbus Defence and Space", "role": "Simulation Developer", "phase": "to_apply"},
+    )
+    assert job["status"] == 201
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    open_resume_in_editor(page, resume_id, "master_cv.tex")
+
+    # Nothing compiled yet, so there is nothing to save.
+    assert page.locator("#resume-save-pdf").is_disabled()
+
+    page.click("#resume-compile")
+    page.wait_for_selector("#resume-pdf:not([hidden])", timeout=60000)
+    assert page.locator("#resume-save-pdf").is_enabled()
+    # Compiling on its own leaves no file behind.
+    assert page.locator(".resume-assets-list li").count() == 0
+
+    page.click("#resume-save-pdf")
+    page.wait_for_selector(".prompt-input")
+    assert page.input_value(".prompt-input") == "master_cv.pdf"
+    page.fill(".prompt-input", "arun-cv-airbus")
+    page.click(".prompt-ok")
+    page.wait_for_function(
+        "() => document.querySelector('#resume-assets').textContent.includes('arun-cv-airbus.pdf')"
+    )
+    # The name gets a .pdf ending, and the file is on disk for any job to use.
+    assert "Saved arun-cv-airbus.pdf" in page.inner_text("#toasts")
+    assert api_post(page, "/api/files", None)["status"] == 405
+
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    page.locator("#toapply-table-body tr").first.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+    assert "No documents attached yet." in page.inner_text("#drawer")
+
+    page.click('[data-action="pick-saved"]')
+    page.wait_for_selector(".picker-list [data-picker-file]")
+    assert "arun-cv-airbus.pdf" in page.inner_text(".picker-list")
+    page.click('[data-picker-kind="cover_letter"]')
+    page.click(".picker-list [data-picker-file]")
+
+    page.wait_for_function(
+        "() => document.querySelector('#drawer').textContent.includes('arun-cv-airbus.pdf')"
+    )
+    assert "Cover letter" in page.inner_text("#drawer .doc-meta")
+    assert "Attached arun-cv-airbus.pdf as Cover letter" in page.inner_text("#toasts")
+
+    # It is the job's own copy: previewable and downloadable under the saved name.
+    page.click("#drawer .doc-name")
+    page.wait_for_selector("#preview-backdrop:not([hidden])")
+    assert "arun-cv-airbus.pdf" in page.inner_text("#preview-title")
+    assert page.get_attribute("#preview-download", "download") == "arun-cv-airbus.pdf"

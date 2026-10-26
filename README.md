@@ -123,6 +123,8 @@ Files that come out of a job-search tool often carry more than the posting: a ma
 
 Open a job and use the **Documents** section to attach a **resume**, **cover letter**, or any **other** file. You can also drag files straight onto the section: drop one on the **Resume**, **Cover letter** or **Other** button to file it as that type, or drop anywhere in the box to attach several at once — the type is then guessed from the file name (`resume`, `cv`, `cover letter`, otherwise Other). Files are stored under `data/uploads/<job id>/` and listed with their type, size and date. Limit is 10 MB per file; anything larger is skipped with a message. Deleting a job also deletes its files.
 
+**From saved files** attaches something you already have instead of uploading it again: it lists every file kept with your resumes — the PDFs **Save PDF** made, plus support files — and you pick the type it goes in as (**Resume**, **Cover letter** or **Other**, switchable at the top of the dialog). The job then gets its own copy, so removing the resume or the job later cannot take the other one's file with it.
+
 Click a document name to preview it without leaving the dashboard: PDFs render in the browser's viewer inside the preview panel, images display inline, and plain text, CSV and Markdown files are shown as text. The panel also offers **Download** and **Open in tab**, and closes with `Esc`, the close button, or a click outside it. Word documents and other formats browsers cannot render show a short notice with a download link instead. Files are served with a safe content type and never as executable HTML.
 
 ## Resume editor
@@ -132,6 +134,7 @@ The **Resume** tab is a three-pane editor laid out like Overleaf: a rail of resu
 - **Source** — the editor is a plain textarea over the `.tex` file, so what you see is exactly what Overleaf will compile. `Tab` inserts two spaces, `Ctrl`/`Cmd`+`S` saves immediately, and everything else saves itself about a second after you stop typing (the header shows *Saved 14:32*). Tabs across the top switch between open resumes.
 - **Preview** — rendered in the browser as you type; no TeX installation, and it works on Windows. It understands the commands resumes actually use: `\section` / `\subsection` with optional `*`, `itemize` and `enumerate`, `\textbf`, `\textit`, `\emph`, `\underline`, `\texttt`, `\textsc`, `\href`, `\url`, `\hfill` right-aligned dates (the `Company … 2021 – 2024` line), `\begin{center}`, simple `tabular`, sizes such as `{\Large Name}`, `\textcolor`, `\definecolor`-free colours, dashes and quotes. Unknown macros are dropped but their arguments are kept, so a custom `\cvsection{…}` still shows its text. **Compile** re-renders on demand and reports how long it took, and the strip under the editor names unbalanced braces or an environment that is never closed (with the line), instead of quietly producing a broken page.
 - **Real PDF** — when [tectonic](https://tectonic-typesetting.github.io) is installed (the launchers put it in `tools/tectonic/` on first start; `brew install tectonic` or `python3 install_tectonic.py` work too), **Compile** runs it on the saved source and shows the actual PDF in the preview pane, with the stock browser viewer for pages, zoom and search. Uploaded support files are placed beside the `.tex` first, so `\includegraphics{profile.png}` resolves exactly as it does in Overleaf. Compiling is sandboxed (`--untrusted`, so no shell escape), limited to 60 seconds, and keeps the log. Without an engine — or when TeX refuses the source — the editor falls back to the in-app preview, and a TeX error puts the engine's log under the source instead of failing silently. Any edit returns to the live preview, because the PDF would be out of date.
+- **Save PDF** — **Compile** only shows the PDF; **Save PDF** keeps it. Pressing it asks for a name (suggested from the resume, `master_cv.tex` → `master_cv.pdf`) and stores the file with the resume's own files, so it is still there after a reload and can be attached to a job without compiling again. A `.pdf` ending is added when you leave it off. Nothing is saved behind your back: compiling on its own writes no file. Deleting the resume deletes the PDFs saved with it.
 - **Files** — upload a photo, a PDF, a bibliography, a note: anything that belongs beside the `.tex`. The rail lists each file with its size; click to open it in a new tab, `×` removes it. They are stored in `data/uploads/resume-<id>/` and deleted with the resume. Reference an image from the source and it renders in place:
 
   ```latex
@@ -287,9 +290,15 @@ POST   /api/resumes                            { "name": "master.tex" } starts f
 GET    /api/resumes/<id>                       one resume with its source and files
 PATCH  /api/resumes/<id>                       { "source", "name", "label" }
 DELETE /api/resumes/<id>                       remove the resume and its files
-POST   /api/resumes/<id>/files                 upload { filename, content_type, data (base64) }
+POST   /api/resumes/<id>/files                 upload { filename, content_type, data (base64) } —
+                                              this is also how the Resume tab's Save PDF keeps a
+                                              compiled PDF under the name you choose
 GET    /api/resumes/<id>/files/<file>          open a support file (images inline)
 DELETE /api/resumes/<id>/files/<file>          remove a support file
+GET    /api/files                              every file saved with your resumes, newest first,
+                                              with the resume (and job) it belongs to
+POST   /api/files/<file>/attach                { "application_id": 1, "kind": "resume" } copies a
+                                              saved file onto a job's documents
 GET    /api/settings                           daily and weekly application goals
 PATCH  /api/settings                           update goals, e.g. { "daily_goal": 5, "weekly_goal": 20 }
 GET    /api/profiles                           every profile with its job counts and locked flag
