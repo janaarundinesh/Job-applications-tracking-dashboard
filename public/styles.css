@@ -3621,11 +3621,16 @@ body.tab-resume .resume-view {
   gap: 6px;
   flex: 1;
   min-width: 0;
+  padding: 0;
+  font: inherit;
   font-size: 11.5px;
   color: var(--text-dim);
-  text-decoration: none;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
-.resume-asset-name:hover { color: var(--text); }
+.resume-asset-name:hover { color: var(--text); text-decoration: underline; }
 .resume-asset-icon { flex: none; color: var(--text-faint); }
 .resume-asset-icon svg { width: 13px; height: 13px; display: block; }
 .resume-asset-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -845,6 +845,8 @@ def test_resume_support_files_are_stored_and_served(api):
     assert uploaded.status == 201
     assert uploaded.data["filename"] == "profile.png"
     assert uploaded.data["url"] == "/api/resumes/%d/files/%d" % (resume["id"], uploaded.data["id"])
+    # The rail previews it like a job document, without guessing the type.
+    assert uploaded.data["preview"] == "image"
 
     assert [file["filename"] for file in api.get("/api/resumes/%d" % resume["id"]).data["files"]] == [
         "profile.png"

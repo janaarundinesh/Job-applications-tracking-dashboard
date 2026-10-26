@@ -2,7 +2,8 @@
    a rendered page on the right, and the profile's resumes in the rail.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, MAX_UPLOAD, api, esc, fmtDate, formatSize, state, toast } from "./core.js";
+import { $, $$, MAX_UPLOAD, api, esc, fetchFile, fmtDate, formatSize, state, toast } from "./core.js";
+import { openPreview } from "./drawer.js";
 import { promptName } from "./dialogs.js";
 
 
@@ -123,11 +124,63 @@ function imageMap(doc) {
   const files = doc && Array.isArray(doc.files) ? doc.files : [];
   files.forEach((file) => {
     map[file.filename.toLowerCase()] = {
+      id: file.id,
       url: new URL(file.url, window.location.origin).href,
       content_type: file.content_type || "",
     };
   });
   return map;
+}
+
+
+/* Pictures used by \includegraphics.
+
+   An <img> sends no headers, so pointing it straight at the file answered
+   "This profile is locked" on a PIN-protected profile. The bytes are fetched
+   with the tokens instead and swapped in as a blob URL, cached per file so
+   typing does not re-download the same picture on every render. */
+const IMAGE_URLS = new Map();
+
+async function hydrateResumeImages() {
+  const doc = activeDoc();
+  const images = $$("#resume-preview-page img[data-resume-image]");
+  await Promise.all(
+    images.map(async (img) => {
+      const url = await resumeImageUrl(doc, Number(img.dataset.resumeImage));
+      // The page may have re-rendered, or the resume changed, while the bytes
+      // were in flight: a detached node must not be written to.
+      if (url && img.isConnected) img.src = url;
+    })
+  );
+}
+
+
+async function resumeImageUrl(doc, fileId) {
+  if (IMAGE_URLS.has(fileId)) return IMAGE_URLS.get(fileId);
+  const file = doc ? (doc.files || []).find((item) => item.id === fileId) : null;
+  if (!file) return "";
+  let url = "";
+  try {
+    url = URL.createObjectURL(await fetchFile(file.url));
+  } catch (error) {
+    // The dashed placeholder already says the picture is not usable.
+    return "";
+  }
+  IMAGE_URLS.set(fileId, url);
+  return url;
+}
+
+
+function releaseResumeImage(fileId) {
+  if (!IMAGE_URLS.has(fileId)) return;
+  URL.revokeObjectURL(IMAGE_URLS.get(fileId));
+  IMAGE_URLS.delete(fileId);
+}
+
+
+function releaseResumeImages() {
+  IMAGE_URLS.forEach((url) => URL.revokeObjectURL(url));
+  IMAGE_URLS.clear();
 }
 
 
@@ -150,11 +203,13 @@ function renderAssets() {
             const image = /^image\//.test(file.content_type || "");
             return (
               '<li class="resume-asset">' +
-              '<a class="resume-asset-name" href="' + esc(file.url) + '" target="_blank"' +
-              ' rel="noopener noreferrer" title="Open ' + esc(file.filename) + '">' +
+              // A button, not a link: the bytes need the session and unlock
+              // headers, which a link or a new tab can never send.
+              '<button type="button" class="resume-asset-name" data-preview-file="' + file.id + '"' +
+              ' title="Preview ' + esc(file.filename) + '">' +
               '<span class="resume-asset-icon">' + (image ? IMAGE_ICON : FILE_ICON) + "</span>" +
               '<span class="resume-asset-label">' + esc(file.filename) + "</span>" +
-              "</a>" +
+              "</button>" +
               '<span class="resume-asset-size">' + esc(formatSize(file.size)) + "</span>" +
               '<button type="button" class="resume-asset-remove" data-resume-file="' + file.id + '"' +
               ' aria-label="Remove ' + esc(file.filename) + '" title="Remove this file">×</button>' +
@@ -165,6 +220,16 @@ function renderAssets() {
         "</ul>"
       : '<p class="resume-rail-empty">Nothing here yet. Upload a photo, a bibliography or a note to use beside the <code>.tex</code>.</p>') +
     '<label class="resume-upload">' + UPLOAD_ICON + 'Upload files<input type="file" id="resume-file-input" multiple hidden /></label>';
+}
+
+
+/* A resume's own file opens in the same panel as a job document: it is fetched
+   with the session and unlock tokens and shown from a blob URL, so a support
+   file is readable on a PIN-protected profile instead of "profile is locked". */
+function previewResumeFile(fileId) {
+  const doc = activeDoc();
+  const file = doc ? (doc.files || []).find((item) => item.id === fileId) : null;
+  if (file) openPreview(file);
 }
 
 
@@ -266,6 +331,7 @@ function renderEditor() {
   if (!doc) {
     $("#resume-preview-page").innerHTML = "";
     $("#resume-preview-title").textContent = "Preview";
+    releaseResumeImages();
     clearPdf();
     setStatus(rs.loading ? "Loading…" : "No resume open");
     return;
@@ -276,6 +342,8 @@ function renderEditor() {
     rs.renderedId = doc.id;
     rs.draft = doc.source;
     rs.dirty = false;
+    // Another resume's pictures are no longer on screen; their blobs go back.
+    releaseResumeImages();
     clearPdf();
     renderPreview();
   }
@@ -325,6 +393,7 @@ function renderPreview() {
   const started = performance.now();
   const result = texToHtml(rs.draft, imageMap(activeDoc()));
   page.innerHTML = result.html;
+  hydrateResumeImages();
   applyZoom();
   renderGutter();
   renderIssues(result.issues);
@@ -588,6 +657,7 @@ async function removeResumeFile(fileId) {
   try {
     await api("/api/resumes/" + doc.id + "/files/" + fileId, { method: "DELETE" });
     doc.files = (doc.files || []).filter((file) => file.id !== fileId);
+    releaseResumeImage(fileId);
     renderAssets();
     renderPreview();
     toast("File removed");
@@ -858,6 +928,12 @@ export function bindResumeEvents() {
     event.target.value = "";
   });
   assets.addEventListener("click", (event) => {
+    const preview = event.target.closest("[data-preview-file]");
+    if (preview) {
+      event.preventDefault();
+      previewResumeFile(Number(preview.dataset.previewFile));
+      return;
+    }
     const remove = event.target.closest("[data-resume-file]");
     if (!remove) return;
     event.preventDefault();
@@ -1327,8 +1403,11 @@ function renderInline(text) {
         const uploaded = CURRENT_IMAGES[label.toLowerCase()];
         const width = optional ? graphicWidth(optional.content) : "";
         if (uploaded && /^image\//.test(uploaded.content_type)) {
+          // The src is filled in once the page is on screen: the bytes need
+          // the unlock token, which an <img> cannot send.
           out +=
-            '<img class="tex-img" src="' + esc(uploaded.url) + '" alt="' + esc(label) + '"' +
+            '<img class="tex-img" data-resume-image="' + uploaded.id + '"' +
+            ' alt="' + esc(label) + '"' +
             (width ? ' style="width:' + width + '"' : "") +
             " />";
         } else {

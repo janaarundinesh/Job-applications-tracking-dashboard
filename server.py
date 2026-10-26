@@ -1476,12 +1476,14 @@ def resume_file_folder(db_path, resume_id):
 
 
 def resume_file_dict(row, resume_id):
+    preview, _ = preview_format(row["content_type"], row["filename"])
     return {
         "id": row["id"],
         "filename": row["filename"],
         "content_type": row["content_type"],
         "size": row["size"],
         "uploaded_at": row["uploaded_at"],
+        "preview": preview,
         "url": "/api/resumes/%s/files/%s" % (resume_id, row["id"]),
     }
 

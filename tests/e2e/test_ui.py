@@ -467,8 +467,9 @@ def test_resume_editor_renders_the_source_and_keeps_files(page):
     page.wait_for_function(
         "() => { const img = document.querySelector('.resume-page .tex-img'); return Boolean(img && img.complete && img.naturalWidth > 0); }"
     )
-    assert page.evaluate("document.querySelector('.resume-page .tex-img').getAttribute('src')").endswith(
-        "/files/1"
+    # The bytes come through the signed fetch, not a bare file URL.
+    assert page.evaluate("document.querySelector('.resume-page .tex-img').getAttribute('src')").startswith(
+        "blob:"
     )
 
     # Both the source and the file survive a reload.
@@ -1298,6 +1299,72 @@ def test_job_document_preview_and_download_on_a_locked_profile(page):
         page.click("#drawer [data-doc-download]")
     assert download.value.suggested_filename == "cover-letter.txt"
     assert download.value.path().read_text() == "Tailored for the A400M role.\n"
+
+
+def test_resume_files_and_pictures_open_on_a_locked_profile(page):
+    r"""The rail file and \includegraphics both used bare URLs, and a bare URL
+    cannot carry the unlock token a PIN-protected profile needs."""
+    enter_profile(page)
+    open_resume_tab(page)
+    page.click('#resume-empty [data-resume-action="new"]')
+    page.wait_for_selector("#resume-source:not([hidden])")
+    page.set_input_files(
+        "#resume-file-input",
+        {"name": "profile.png", "mimeType": "image/png", "buffer": PNG_BYTES},
+    )
+    page.wait_for_selector(".resume-asset-name")
+    page.fill(
+        "#resume-source",
+        RESUME_SOURCE.replace(
+            "test@example.com",
+            "test@example.com\n\\includegraphics[width=3cm]{profile.png}",
+        ),
+    )
+    page.wait_for_function(
+        "() => { const img = document.querySelector('.resume-page .tex-img'); return Boolean(img && img.naturalWidth > 0); }"
+    )
+    # The reload below would otherwise cut the autosave short, and the locked
+    # profile would come back without the source that uses the picture.
+    page.wait_for_function(
+        "() => /^Saved \\d/.test(document.querySelector('#resume-status').textContent)"
+    )
+
+    # Lock the profile, then come back in through the PIN prompt.
+    locked = api_post(page, "/api/profiles/1/pin", {"pin": "4321"})
+    assert locked["status"] == 200, locked
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    page.wait_for_selector("#welcome-list [data-enter-profile]")
+    page.locator("#welcome-list [data-enter-profile]").first.click()
+    page.wait_for_selector("#unlock-backdrop:not([hidden])")
+    page.fill("#unlock-pin", "4321")
+    page.click("#unlock-submit")
+    page.wait_for_selector("#panel-overview:not([hidden])")
+    open_resume_tab(page)
+    page.wait_for_selector(".resume-asset-name")
+
+    # The picture in the rendered page is fetched with the unlock token.
+    page.wait_for_function(
+        "() => { const img = document.querySelector('.resume-page .tex-img'); return Boolean(img && img.naturalWidth > 0); }"
+    )
+    assert page.evaluate(
+        "document.querySelector('.resume-page .tex-img').getAttribute('src')"
+    ).startswith("blob:")
+
+    # And the file in the rail opens the preview panel, not a locked page.
+    page.click(".resume-asset-name")
+    page.wait_for_selector("#preview-backdrop:not([hidden])")
+    page.wait_for_function(
+        "() => document.querySelector('#preview-body .preview-image') !== null"
+    )
+    assert page.evaluate(
+        "document.querySelector('#preview-body .preview-image').getAttribute('src')"
+    ).startswith("blob:")
+    assert "profile.png" in page.inner_text("#preview-title")
+    assert "locked" not in page.inner_text("#preview-body").lower()
+
+    page.click("#preview-close")
+    page.wait_for_selector("#preview-backdrop", state="hidden")
 
 
 def test_a_document_that_vanished_offers_try_again(page):
