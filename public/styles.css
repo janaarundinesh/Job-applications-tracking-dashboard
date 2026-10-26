@@ -2946,6 +2946,19 @@ html.is-offline .welcome { display: none; }
   animation: none;
 }
 
+/* The editor is a workspace, not a centered page: on a wide monitor the page's
+   1440px column would leave blank strips down either side of it. */
+body.tab-resume .page {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body.tab-resume .resume-view {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 .resume-app {
   display: grid;
   grid-template-columns: 236px minmax(0, 0.95fr) minmax(0, 1.05fr);

@@ -795,3 +795,29 @@ def test_long_values_do_not_push_the_match_column_off_screen(page):
           return cell.getBoundingClientRect().height < 24;
         }"""
     )
+
+
+def test_resume_editor_uses_the_whole_window(page):
+    """A wide monitor must not leave blank strips down either side of the editor."""
+    page.set_viewport_size({"width": 1650, "height": 900})
+    enter_profile(page)
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector("#panel-resume:not([hidden])")
+    assert page.evaluate(
+        """() => {
+          const app = document.querySelector('#resume-app').getBoundingClientRect();
+          return Math.abs(app.left) <= 1 && Math.abs(app.right - window.innerWidth) <= 1;
+        }"""
+    )
+    assert page.evaluate("() => document.documentElement.scrollWidth") == 1650
+
+    # The other tabs keep the centred reading column they are designed for.
+    page.click('[data-tab="applied"]')
+    page.wait_for_timeout(150)
+    left, right = page.evaluate(
+        """() => {
+          const box = document.querySelector('main.page').getBoundingClientRect();
+          return [Math.round(box.left), Math.round(box.right)];
+        }"""
+    )
+    assert left > 0 and right < 1650
