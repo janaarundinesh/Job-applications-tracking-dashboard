@@ -35,8 +35,10 @@ export function renderViewSwitch() {
 
 
 export function setTab(tab) {
-  state.tab = TABS.includes(tab) ? tab : "overview";
-  if (state.tab !== "to_apply") state.selection.clear();
+  const next = TABS.includes(tab) ? tab : "overview";
+  // Each list keeps its own rows, so a selection never carries across tabs.
+  if (next !== state.tab) state.selection.clear();
+  state.tab = next;
   render();
 }
 
@@ -194,7 +196,12 @@ export function renderWorkspace() {
     return;
   }
 
+  const visibleIds = new Set(list.map((app) => app.id));
+  Array.from(state.selection).forEach((id) => {
+    if (!visibleIds.has(id)) state.selection.delete(id);
+  });
   appliedBody.innerHTML = list.map(appliedRow).join("");
+  updateBulkBar(list);
   appliedEmpty.hidden = list.length > 0;
   if (!list.length) {
     appliedEmpty.innerHTML = emptyState({
@@ -221,7 +228,11 @@ export function appliedRow(app) {
         : "")
     : '<span class="step-empty">—</span>';
   return (
-    '<tr data-app-id="' + app.id + '" tabindex="0">' +
+    '<tr data-app-id="' + app.id + '" tabindex="0"' +
+    (state.selection.has(app.id) ? ' class="is-selected"' : "") + ">" +
+    '<td class="select-col"><input type="checkbox" data-select-id="' + app.id + '"' +
+    (state.selection.has(app.id) ? " checked" : "") +
+    ' aria-label="Select ' + esc(app.company) + " " + esc(app.role) + '" /></td>' +
     '<td class="company-cell">' +
     '<div class="company-name">' + esc(app.company) +
     (review ? '<span class="review-flag" title="Applied ' + daysSince(app.applied_on) + ' days ago — check whether this role is still open">Review</span>' : "") +

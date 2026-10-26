@@ -488,15 +488,24 @@ export function bulkDelete() {
 export function updateBulkBar(list) {
   const bar = $("#bulk-bar");
   const count = state.selection.size;
-  bar.hidden = state.tab !== "to_apply" || count === 0;
+  const isSaved = state.tab === "to_apply";
+  const isApplied = state.tab === "applied";
+  bar.hidden = !(isSaved || isApplied) || count === 0;
+  // Marking as applied only means something for jobs that were never sent.
+  $("#bulk-apply").hidden = !isSaved;
   if (!bar.hidden) $("#bulk-count").textContent = count + " selected";
-  const all = $("#select-all-toapply");
-  if (!all) return;
+  const activeBox = isApplied ? $("#select-all-applied") : $("#select-all-toapply");
+  const otherBox = isApplied ? $("#select-all-toapply") : $("#select-all-applied");
+  if (otherBox) {
+    otherBox.checked = false;
+    otherBox.indeterminate = false;
+  }
+  if (!activeBox) return;
   const visible = list.map((app) => app.id);
   const chosen = visible.filter((id) => state.selection.has(id)).length;
-  all.disabled = visible.length === 0;
-  all.checked = visible.length > 0 && chosen === visible.length;
-  all.indeterminate = chosen > 0 && chosen < visible.length;
+  activeBox.disabled = visible.length === 0;
+  activeBox.checked = visible.length > 0 && chosen === visible.length;
+  activeBox.indeterminate = chosen > 0 && chosen < visible.length;
 }
 
 

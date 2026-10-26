@@ -26,7 +26,7 @@ export const MODE_LABEL = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site
 export const DOC_LABEL = { resume: "Resume", cover_letter: "Cover letter", other: "Other" };
 
 
-export const TABS = ["overview", "applied", "to_apply", "resume", "trash"];
+export const TABS = ["overview", "to_apply", "applied", "resume", "trash"];
 
 
 export const CLOSED = ["rejected", "withdrawn"];

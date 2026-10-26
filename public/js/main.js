@@ -383,6 +383,14 @@ export function bindEvents() {
   });
 
   $("#applied-table-body").addEventListener("change", (event) => {
+    const box = event.target.closest("[data-select-id]");
+    if (box) {
+      const id = Number(box.dataset.selectId);
+      if (box.checked) state.selection.add(id);
+      else state.selection.delete(id);
+      renderWorkspace();
+      return;
+    }
     const select = event.target.closest("[data-inline-status]");
     if (select) patchStatus(Number(select.dataset.inlineStatus), select.value);
   });
@@ -396,11 +404,13 @@ export function bindEvents() {
     renderWorkspace();
   });
 
-  $("#select-all-toapply").addEventListener("change", (event) => {
-    const ids = visibleApps("to_apply").map((app) => app.id);
-    if (event.target.checked) ids.forEach((id) => state.selection.add(id));
-    else ids.forEach((id) => state.selection.delete(id));
-    renderWorkspace();
+  [["#select-all-toapply", "to_apply"], ["#select-all-applied", "applied"]].forEach(([selector, phase]) => {
+    $(selector).addEventListener("change", (event) => {
+      const ids = visibleApps(phase).map((app) => app.id);
+      if (event.target.checked) ids.forEach((id) => state.selection.add(id));
+      else ids.forEach((id) => state.selection.delete(id));
+      renderWorkspace();
+    });
   });
 
   $("#bulk-apply").addEventListener("click", bulkMarkApplied);

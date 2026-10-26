@@ -43,9 +43,9 @@ The service worker caches the shell — `index.html`, `styles.css`, the ES modul
 ## The tabs
 
 - **Overview** — total applications, active, interviews, offers, response rate, saved jobs, the stage funnel, applications per week (last 8 weeks) and follow-ups due in the next 7 days.
-- **Applied** — everything you have actually sent. Table view (search, filter, sort, inline stage changes) and board view (drag cards between Applied → Screening → Interview → Offer, plus Rejected/Withdrawn).
 - **To apply** — jobs you have saved but not sent yet. Also a table, with a one-click **Mark as applied** action on every row (or in the detail drawer). Saved jobs are excluded from pipeline stats, follow-up reminders and the board until you send them.
-- **Bulk actions** — tick the checkbox on several saved jobs (or the header checkbox to select everything currently shown) and a bar appears with **Mark as applied**, **Delete** and **Clear**. Marking several as applied sends them to the Applied tab with today's date; Delete asks once, then moves them all to Trash, where they can still be restored. The selection clears when you change tabs.
+- **Applied** — everything you have actually sent. Table view (search, filter, sort, inline stage changes) and board view (drag cards between Applied → Screening → Interview → Offer, plus Rejected/Withdrawn).
+- **Bulk actions** — in either table, tick the checkbox on several jobs (or the header checkbox to select everything currently shown) and a bar appears with **Delete** and **Clear** — plus **Mark as applied** on saved jobs, which sends them to the Applied tab with today's date. Delete asks once, then moves the whole selection to Trash, where it can still be restored. The selection clears when you change tabs.
 - **Resume** — a LaTeX editor with the source on the left, the rendered page on the right and your resume files in the rail. See [Resume editor](#resume-editor).
 - **Trash** — deleted jobs wait here. Restore one, or delete it permanently when you are sure.
 

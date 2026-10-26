@@ -2853,10 +2853,10 @@ html.is-offline .welcome { display: none; }
   .field-row { grid-template-columns: 1fr; }
   .kv-grid { grid-template-columns: 1fr; }
   .apps-table td, .apps-table th { padding: 10px 11px; }
-  #applied-table-shell .apps-table th:nth-child(6),
-  #applied-table-shell .apps-table td:nth-child(6),
   #applied-table-shell .apps-table th:nth-child(7),
   #applied-table-shell .apps-table td:nth-child(7),
+  #applied-table-shell .apps-table th:nth-child(8),
+  #applied-table-shell .apps-table td:nth-child(8),
   #toapply-table-shell .apps-table th:nth-child(6),
   #toapply-table-shell .apps-table td:nth-child(6) { display: none; }
   .row-actions { opacity: 1; }
@@ -2885,8 +2885,8 @@ html.is-offline .welcome { display: none; }
   .tab { padding: 7px 8px; font-size: 12px; }
   .app-card .card-delete { opacity: 1; }
   .stat-value { font-size: 25px; }
-  #applied-table-shell .apps-table th:nth-child(2),
-  #applied-table-shell .apps-table td:nth-child(2),
+  #applied-table-shell .apps-table th:nth-child(3),
+  #applied-table-shell .apps-table td:nth-child(3),
   #toapply-table-shell .apps-table th:nth-child(3),
   #toapply-table-shell .apps-table td:nth-child(3) { display: none; }
 }

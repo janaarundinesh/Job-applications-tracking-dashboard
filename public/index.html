@@ -86,11 +86,11 @@
 
   <nav class="tabs" id="main-tabs" role="tablist" aria-label="Sections">
     <button class="tab is-active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
-    <button class="tab" data-tab="applied" role="tab" aria-selected="false">
-      Applied <span class="tab-count" id="count-applied">0</span>
-    </button>
     <button class="tab" data-tab="to_apply" role="tab" aria-selected="false">
       To apply <span class="tab-count" id="count-toapply">0</span>
+    </button>
+    <button class="tab" data-tab="applied" role="tab" aria-selected="false">
+      Applied <span class="tab-count" id="count-applied">0</span>
     </button>
     <button class="tab" data-tab="resume" role="tab" aria-selected="false">Resume</button>
     <button class="tab" data-tab="trash" role="tab" aria-selected="false">
@@ -258,6 +258,7 @@
       <table class="apps-table">
         <thead>
           <tr>
+            <th class="select-col"><input type="checkbox" id="select-all-applied" aria-label="Select all applications" /></th>
             <th class="sortable" data-sort="company">Company</th>
             <th class="sortable" data-sort="role">Role</th>
             <th>Stage</th>

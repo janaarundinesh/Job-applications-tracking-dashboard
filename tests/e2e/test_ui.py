@@ -574,3 +574,66 @@ def test_jobs_sort_and_filter_by_resume_match(page):
     assert page.locator("#filter-match").input_value() == ""
     assert len(companies()) == 5
     assert page.locator("#clear-filters").is_hidden()
+
+
+def test_applied_list_selects_all_and_bulk_deletes(page):
+    for company in ("Alpha Co", "Beta Co", "Gamma Co"):
+        assert api_post(page, "/api/applications", {"company": company, "role": "Engineer"})["status"] == 201
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+
+    # Saved jobs come before the applications you have already sent.
+    labels = [label.strip() for label in page.locator("#main-tabs .tab").all_inner_texts()]
+    assert labels[0].startswith("Overview")
+    assert labels[1].startswith("To apply")
+    assert labels[2].startswith("Applied")
+    assert labels[3] == "Resume"
+    assert labels[4].startswith("Trash")
+
+    page.click('[data-tab="applied"]')
+    page.wait_for_selector("#applied-table-body tr")
+    assert page.locator("#applied-table-body tr").count() == 3
+    # The select column fits beside the rest of the table at this width.
+    assert page.evaluate(
+        """() => {
+          const shell = document.querySelector('#applied-table-shell');
+          return shell.scrollWidth <= shell.clientWidth + 1;
+        }"""
+    )
+
+    header = page.locator("#select-all-applied")
+    assert header.is_visible()
+    header.check()
+    assert page.locator("#bulk-count").inner_text() == "3 selected"
+    assert page.locator("#bulk-bar").is_visible()
+    # Nothing here still needs sending, so there is nothing to mark as applied.
+    assert page.locator("#bulk-apply").is_hidden()
+
+    page.locator("#applied-table-body [data-select-id]").first.uncheck()
+    assert page.locator("#bulk-count").inner_text() == "2 selected"
+    assert page.locator("#select-all-applied").evaluate("(box) => box.indeterminate") is True
+
+    page.click("#bulk-delete")
+    page.wait_for_selector(".confirm-backdrop")
+    assert page.locator(".confirm-backdrop .confirm-title").inner_text() == "Move 2 jobs to trash?"
+    page.click(".confirm-backdrop .confirm-ok")
+    page.wait_for_selector(".confirm-backdrop", state="detached")
+
+    assert page.locator("#count-applied").inner_text() == "1"
+    assert page.locator("#count-trash").inner_text() == "2"
+    assert page.locator("#bulk-bar").is_hidden()
+
+    page.click('[data-tab="applied"]')
+    page.wait_for_selector("#applied-table-body tr")
+    assert page.locator("#applied-table-body tr").count() == 1
+    assert page.locator("#select-all-applied").is_checked() is False
+
+    # The saved list still selects and marks, with its own header checkbox.
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-empty:not([hidden])")
+    assert page.locator("#select-all-applied").is_checked() is False
