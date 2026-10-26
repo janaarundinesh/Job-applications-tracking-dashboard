@@ -30,7 +30,7 @@ export function showOfflineScreen() {
   if (lead) {
     lead.textContent =
       "The dashboard opened, but the small Python server that keeps your jobs, documents and goals is not running." +
-      " Start it with the command below, then check again.";
+      " Opening Job Pipeline.app starts it — or run the command below — and this screen steps into the dashboard as soon as it answers.";
   }
   const status = document.getElementById("file-guard-status");
   if (status) {

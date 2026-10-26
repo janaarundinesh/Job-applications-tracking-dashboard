@@ -1,0 +1,80 @@
+#!/bin/sh
+# Job Pipeline — the app itself.
+#
+# Opening this starts the tracker if it is not already running, waits until it
+# answers, and opens the dashboard. No Terminal window is involved: the server is
+# left running in the background and writes to data/server.log.
+#
+# Keep this bundle in the project folder, or dock an alias to it, so that it can
+# find server.py and your data. "Start Job Pipeline.command" is still there for
+# the terminal-visible case.
+
+set -u
+
+# A double-clicked app starts with a bare environment: no shell profile, a
+# minimal PATH and no useful working directory. Add the usual places a real
+# python3 hides, and work from the project folder instead.
+# Contents/MacOS/Job Pipeline sits three levels inside the project folder.
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../../.." && pwd)
+PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
+export PATH
+
+PORT=8787
+URL="http://127.0.0.1:$PORT"
+LOG="$ROOT/data/server.log"
+
+alert() {
+  osascript -e "display alert \"Job Pipeline\" message \"$1\"" >/dev/null 2>&1
+}
+
+cd "$ROOT" 2>/dev/null || {
+  alert "The app could not find its folder. Keep Job Pipeline.app in the project folder, or dock an alias to it."
+  exit 1
+}
+
+if [ ! -f server.py ]; then
+  alert "server.py is not next to this app. Keep Job Pipeline.app in the project folder, or dock an alias to it."
+  exit 1
+fi
+
+PYTHON=$(command -v python3 2>/dev/null)
+if [ -z "$PYTHON" ]; then
+  alert "Python 3 was not found. Install it from python.org, then open the app again."
+  exit 1
+fi
+
+is_up() {
+  curl -fsS --max-time 2 "$URL/api/health" >/dev/null 2>&1
+}
+
+# Already running? Then opening the app only has to open the dashboard.
+if is_up; then
+  open "$URL"
+  exit 0
+fi
+
+mkdir -p "$ROOT/data"
+
+# Compile can build a real PDF with Tectonic. It is optional: fetch it once into
+# tools/tectonic, and carry on (in-app preview) if that is not possible.
+"$PYTHON" install_tectonic.py --quiet >>"$LOG" 2>&1
+
+# Start the server without a window. It outlives this app on purpose: the
+# dashboard in the browser needs it to keep running after the icon is done.
+nohup "$PYTHON" server.py --port "$PORT" </dev/null >>"$LOG" 2>&1 &
+
+# Wait for it to answer. A cold start still has to open the database, run the
+# schema and (the first time) fetch the LaTeX engine.
+tries=0
+while [ "$tries" -lt 60 ]; do
+  if is_up; then
+    open "$URL"
+    exit 0
+  fi
+  tries=$((tries + 1))
+  sleep 0.25
+done
+
+alert "The tracker did not start. The last lines of data/server.log say why — or run python3 server.py in the project folder to see the error for yourself."
+exit 1
