@@ -642,3 +642,49 @@ def test_applied_list_selects_all_and_bulk_deletes(page):
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-empty:not([hidden])")
     assert page.locator("#select-all-applied").is_checked() is False
+
+
+def test_applied_bulk_bar_moves_several_jobs_to_a_stage(page):
+    for company in ("Alpha Co", "Beta Co", "Gamma Co"):
+        assert api_post(page, "/api/applications", {"company": company, "role": "Engineer"})["status"] == 201
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="applied"]')
+    page.wait_for_selector("#applied-table-body tr")
+
+    # Saved jobs have nothing to move: the stage controls belong to applied ones.
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-empty:not([hidden])")
+    page.click('[data-tab="applied"]')
+    page.wait_for_selector("#applied-table-body tr")
+    assert page.locator("#bulk-status").is_hidden()
+
+    page.check("#select-all-applied")
+    assert page.locator("#bulk-status").is_visible()
+    assert page.locator("#bulk-stage-apply").is_visible()
+    assert page.locator("#bulk-stage-apply").is_disabled()
+    assert page.locator("#bulk-apply").is_hidden()
+
+    page.select_option("#bulk-status", "interview")
+    assert page.locator("#bulk-stage-apply").is_enabled()
+    page.click("#bulk-stage-apply")
+    page.wait_for_selector("#bulk-bar", state="hidden")
+
+    assert page.evaluate(
+        "() => Array.from(document.querySelectorAll('#applied-table-body .stage-select')).map((s) => s.value)"
+    ) == ["interview", "interview", "interview"]
+    # The stage filter and the overview funnel follow the move.
+    page.select_option("#filter-status", "interview")
+    assert page.locator("#applied-table-body tr").count() == 3
+    assert page.inner_text('#funnel .funnel-row[data-status="interview"] .funnel-count') == "3"
+
+    # The stage select resets, so a second selection starts from "Change stage…".
+    page.select_option("#filter-status", "")
+    page.check("#select-all-applied")
+    assert page.input_value("#bulk-status") == ""
+    assert page.locator("#bulk-stage-apply").is_disabled()

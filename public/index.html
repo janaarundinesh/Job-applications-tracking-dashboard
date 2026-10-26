@@ -277,6 +277,16 @@
 
     <div class="bulk-bar" id="bulk-bar" hidden>
       <span class="bulk-count" id="bulk-count"></span>
+      <select id="bulk-status" class="select bulk-stage" aria-label="Stage for the selected jobs" hidden>
+        <option value="">Change stage…</option>
+        <option value="applied">Applied</option>
+        <option value="screening">Screening</option>
+        <option value="interview">Interview</option>
+        <option value="offer">Offer</option>
+        <option value="rejected">Rejected</option>
+        <option value="withdrawn">Withdrawn</option>
+      </select>
+      <button type="button" class="btn btn-primary" id="bulk-stage-apply" hidden disabled>Set stage</button>
       <button type="button" class="btn btn-primary" id="bulk-apply">Mark as applied</button>
       <button type="button" class="btn btn-danger" id="bulk-delete">Delete</button>
       <button type="button" class="btn btn-ghost" id="bulk-clear">Clear</button>

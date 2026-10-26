@@ -2,7 +2,7 @@
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, $$, state, statusSelectOptions, toast, todayISO, tokenFor } from "./core.js";
-import { bulkDelete, bulkMarkApplied, closePosition, deleteDocument, loadApps, loadProfiles, markApplied, markReviewed, patchStatus, persistProfile, renderProfileChrome, restoreJob, uploadDocuments, visibleApps } from "./data.js";
+import { bulkDelete, bulkMarkApplied, bulkSetStatus, closePosition, deleteDocument, loadApps, loadProfiles, markApplied, markReviewed, patchStatus, persistProfile, renderProfileChrome, restoreJob, uploadDocuments, visibleApps } from "./data.js";
 import { closeModal, confirmEmptyTrash, confirmPurge, confirmTrash, extractFromLink, openModal, setModalMode, submitForm, syncPhaseFields } from "./dialogs.js";
 import { closeDrawer, closePreview, openDrawer, openPreview } from "./drawer.js";
 import { exportCSV, exportJSON, handleImportFile } from "./io.js";
@@ -414,6 +414,10 @@ export function bindEvents() {
   });
 
   $("#bulk-apply").addEventListener("click", bulkMarkApplied);
+  $("#bulk-status").addEventListener("change", (event) => {
+    $("#bulk-stage-apply").disabled = !event.target.value;
+  });
+  $("#bulk-stage-apply").addEventListener("click", bulkSetStatus);
   $("#bulk-delete").addEventListener("click", bulkDelete);
   $("#bulk-clear").addEventListener("click", () => {
     state.selection.clear();

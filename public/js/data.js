@@ -450,6 +450,44 @@ export async function bulkMarkApplied() {
 }
 
 
+export async function bulkSetStatus() {
+  const select = $("#bulk-status");
+  const status = select ? select.value : "";
+  const ids = Array.from(state.selection);
+  if (!status || !ids.length) return;
+  const button = $("#bulk-stage-apply");
+  const label = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Saving…";
+  }
+  let done = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const updated = await api("/api/applications/" + id, {
+        method: "PATCH",
+        body: JSON.stringify({ status: status }),
+      });
+      const index = state.apps.findIndex((item) => item.id === id);
+      if (index === -1) state.apps.push(updated);
+      else state.apps[index] = updated;
+      done += 1;
+    } catch (error) {
+      failed += 1;
+    }
+  }
+  state.selection.clear();
+  if (button) button.textContent = label;
+  if (select) select.value = "";
+  render();
+  toast(
+    done + " job" + (done === 1 ? "" : "s") + " moved to " + STATUS_LABEL[status] +
+      (failed ? " — " + failed + " failed" : "")
+  );
+}
+
+
 export function bulkDelete() {
   const ids = Array.from(state.selection);
   if (!ids.length) return;
@@ -491,8 +529,15 @@ export function updateBulkBar(list) {
   const isSaved = state.tab === "to_apply";
   const isApplied = state.tab === "applied";
   bar.hidden = !(isSaved || isApplied) || count === 0;
-  // Marking as applied only means something for jobs that were never sent.
+  // Marking as applied only means something for jobs that were never sent;
+  // moving stage only means something for jobs that have been sent.
   $("#bulk-apply").hidden = !isSaved;
+  const stageSelect = $("#bulk-status");
+  const stageButton = $("#bulk-stage-apply");
+  stageSelect.hidden = !isApplied;
+  stageButton.hidden = !isApplied;
+  if (!isApplied) stageSelect.value = "";
+  stageButton.disabled = !isApplied || !stageSelect.value;
   if (!bar.hidden) $("#bulk-count").textContent = count + " selected";
   const activeBox = isApplied ? $("#select-all-applied") : $("#select-all-toapply");
   const otherBox = isApplied ? $("#select-all-toapply") : $("#select-all-applied");
