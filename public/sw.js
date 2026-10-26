@@ -27,6 +27,7 @@ const SHELL = [
   "/js/reminders.js",
   "/js/resume.js",
   "/js/pwa.js",
+  "/js/status.js",
 ];
 
 self.addEventListener("install", (event) => {

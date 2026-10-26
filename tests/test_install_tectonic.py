@@ -267,4 +267,7 @@ def test_both_launchers_install_the_engine_before_starting():
         text = launcher.read_text(encoding="utf-8", errors="replace")
         assert "install_tectonic.py --quiet" in text, name
         # The install has to happen first, or the server starts without an engine.
-        assert text.index("install_tectonic.py") < text.index("server.py --open"), name
+        assert text.index("install_tectonic.py") < text.index("server.py"), name
+        # The first run opens the dashboard; the restarts behind it must not
+        # open a second tab.
+        assert "--open" in text, name

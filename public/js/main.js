@@ -12,6 +12,7 @@ import { clearFilters, render, renderViewSwitch, renderWorkspace, setTab, syncFi
 import { installFocusManagement } from "./a11y.js";
 import { disableReminders, enableReminders, renderReminderSettings } from "./reminders.js";
 import { registerServiceWorker, showOfflineScreen, syncThemeColor } from "./pwa.js";
+import { startServerWatch } from "./status.js";
 
 
 export function bindEvents() {
@@ -588,6 +589,8 @@ export function bindEvents() {
 export function init() {
   installFocusManagement();
   registerServiceWorker();
+  // Starts the /api/health heartbeat behind the topbar indicator.
+  startServerWatch();
   $("#form-applied-on").value = todayISO();
   $("#form-status").innerHTML = statusSelectOptions("applied", false);
   $("#filter-status").innerHTML = statusSelectOptions("", true);

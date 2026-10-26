@@ -8,6 +8,8 @@ No accounts, no build step, no Python dependencies. Python 3.8+ standard library
 
 Double-click the launcher for your platform in the project folder: **Start Job Pipeline.command** on macOS, **Start Job Pipeline.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server.
 
+Should the server die while you work, the launcher starts it again in the same window — without opening a second browser tab — and the dashboard reconnects on its own. If it fails three times within seconds of starting (a port already taken, a database it cannot open) the launcher stops trying and says so, instead of spinning forever.
+
 From a terminal instead:
 
 ```bash
@@ -37,7 +39,17 @@ Windows users can run the launcher, use `python install_tectonic.py`, or follow 
 
 Install the dashboard as an app if you like: see [Install it as an app](#install-it-as-an-app).
 
-Opening `public/index.html` from Finder works too: if the server is already running, the page forwards to it, and if it is not you get a short start screen with the command to run, a **Check again** button and a link to the dashboard. Either way the server must stay running for saves to land, so keep that Terminal window open. If an action reports that it cannot reach the server, start it again; a single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
+Opening `public/index.html` from Finder works too: if the server is already running, the page forwards to it, and if it is not you get a short start screen with the command to run, a **Check again** button and a link to the dashboard. That screen also keeps checking on its own, so starting the server is enough — no click needed. Either way the server must stay running for saves to land, so keep that Terminal window open. If an action reports that it cannot reach the server, the topbar pill turns red and its **Retry** button checks for you (see [If the server stops](#if-the-server-stops)); a single failed request is retried once automatically, so a stale connection (after the machine sleeps, for example) does not interrupt a save.
+
+## If the server stops
+
+Every screen is served by that one Python process, so the dashboard is only as alive as it is. Three things keep that visible and fixable:
+
+- **The pill in the topbar** answers *is the server still there?* It reads `GET /api/health` every 20 seconds, turns red the moment a request cannot reach the server (no waiting for the next check), and turns green again as soon as one gets through. Its tooltip names the address it is watching.
+- **Retry**, which appears on the pill while it is red, checks there and then and keeps the checking on a short backoff — 2 seconds at first, growing to 20 — until the server answers. After an outage long enough to notice, coming back offers **Reload** in a message, for a page whose lists may be stale.
+- **The launcher**, which restarts a server that died under it (see [Run it](#run-it)).
+
+A page in a browser cannot start a process on your computer, so *starting* the server is the launcher's job and the Retry button only ever checks: double-click **Start Job Pipeline.command** or **Start Job Pipeline.bat** again, or run `python3 server.py`. An installed app shows the same start screen while the server is down and steps into the dashboard on its own once it answers.
 
 ## Install it as an app
 
@@ -47,7 +59,7 @@ The dashboard ships a [web app manifest](public/manifest.webmanifest) and a [ser
 - **Safari on macOS 14+** — **File → Add to Dock**. On iPhone or iPad, **Share → Add to Home Screen**.
 - Anything else that supports installing web apps will offer it too; the app is served from `http://127.0.0.1:8787`, so it only works while that server runs.
 
-The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Job Pipeline server* screen with the command and a **Check again** button. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
+The service worker caches the shell — `index.html`, `styles.css`, the ES modules and the icons — so an installed window still opens when the server is stopped, and shows the *Start the Job Pipeline server* screen with the command and a **Check again** button, which keeps looking in the background and steps into the dashboard once the server answers. Job data, settings and documents are **never** cached: every API call goes straight to the server, so you cannot be shown a stale list of applications. While the server is running a reload always fetches the current files, so upgrades take effect immediately.
 
 ## The tabs
 
@@ -221,7 +233,10 @@ RUN_E2E=1 python3 -m pytest tests/e2e   # browser suite (needs Playwright)
 
 The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token, and a locked profile's documents staying out of reach of a bare URL), importing (the to-apply default, the notes a file folds in, the match estimate and its validation), resumes (the starter, source and file limits, support-file upload and download, tailored copies that inherit the master's files, and per-profile isolation) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
 
-The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, previews and downloads that profile's documents, opens a locked profile's resume file and its `\includegraphics` picture, sees a preview that cannot load offer **Try again**, checks that each match number and its drawer chip are coloured by their band, that the tables carry each job's link with any pasted note trimmed off, that a job closed while it opens still closes, and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen with a working **Check again**.
+The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, previews and downloads that profile's documents, opens a locked profile's resume file and its `\includegraphics` picture, sees a preview that cannot load offer **Try again**, checks that each match number and its drawer chip are coloured by their band, that the tables carry each job's link with any pasted note trimmed off, that a job closed while it opens still closes, that the topbar pill reports the server as active, turns red when a request cannot reach it, keeps **Retry** on hand and goes green again when the server answers — and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen, which **Check again** can leave and which steps into the dashboard by itself once the server is back.
+
+A third, small suite drives `Start Job Pipeline.command` with a stand-in `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned without a real server or port.
+
 
 ```bash
 python3 -m playwright install chromium   # once, after installing requirements-dev
@@ -259,7 +274,8 @@ public/          Dashboard UI: index.html, styles.css, sw.js, manifest.webmanife
                  (loading and mutations), overview.js, workspace.js, drawer.js, dialogs.js,
                  profiles.js (picker, PIN, settings), io.js (import/export), resume.js
                  (resume editor and LaTeX preview), a11y.js (dialog focus), reminders.js
-                 (daily notification), pwa.js (service worker and offline start screen)
+                 (daily notification), pwa.js (service worker and offline start screen),
+                 status.js (the /api/health heartbeat behind the topbar pill)
 tests/           pytest suite exercising the API end to end
   tests/e2e/     Playwright suite driving the dashboard in Chromium
 data/            Created on first run: tracker.db, uploads/ and backups/

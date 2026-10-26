@@ -91,6 +91,9 @@ export const state = {
   gate: false,
   settingsView: "menu",
   loading: true,
+  // Kept up to date by js/status.js from the /api/health heartbeat; true until
+  // the first answer arrives.
+  serverOnline: true,
 };
 
 
@@ -404,6 +407,20 @@ export function clearToken(profileId) {
 export let apiToken = "";
 
 
+/* The topbar indicator (js/status.js) listens for these, so a request that
+   cannot reach the server turns it red at once instead of waiting for the next
+   heartbeat. Only the transition is announced; a response of any status means
+   the server is there. */
+function noteServerUnreachable() {
+  document.dispatchEvent(new Event("jobpipe:server-error"));
+}
+
+
+function noteServerReachable() {
+  if (state.serverOnline === false) document.dispatchEvent(new Event("jobpipe:server-ok"));
+}
+
+
 export async function sessionToken() {
   if (apiToken) return apiToken;
   let response;
@@ -411,12 +428,14 @@ export async function sessionToken() {
     response = await fetch("/api/session", { cache: "no-store" });
   } catch (error) {
     // A stopped server reaches us here before any request is made.
+    noteServerUnreachable();
     const offline = new Error(
       "Can't reach the tracker server. Check that it is still running (python3 server.py), then try again."
     );
     offline.offline = true;
     throw offline;
   }
+  noteServerReachable();
   if (!response.ok) throw new Error("The tracker refused this session. Reload the dashboard.");
   const payload = await response.json();
   apiToken = payload.token || "";
@@ -464,8 +483,10 @@ export async function fetchFile(path) {
   try {
     response = await fetch(path, { headers: await authHeaders(path), cache: "no-store" });
   } catch (error) {
+    noteServerUnreachable();
     throw new Error("Can't reach the tracker server. Check that it is still running, then try again.");
   }
+  noteServerReachable();
   if (!response.ok) {
     let message = "This file could not be loaded (" + response.status + ")";
     try {
@@ -502,6 +523,7 @@ export async function request(path, options) {
     try {
       response = await fetch(path, init);
     } catch (retryError) {
+      noteServerUnreachable();
       const offline = new Error(
         window.location.protocol === "file:"
           ? "Open the dashboard from http://127.0.0.1:8787 (run python3 server.py) instead of opening the HTML file directly."
@@ -512,6 +534,7 @@ export async function request(path, options) {
       throw offline;
     }
   }
+  noteServerReachable();
   const text = await response.text();
   let payload = null;
   if (text) {

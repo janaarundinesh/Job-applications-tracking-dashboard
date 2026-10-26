@@ -99,6 +99,12 @@
   </nav>
 
   <div class="topbar-actions">
+    <div class="server-status" id="server-status" data-state="checking">
+      <span class="server-light" aria-hidden="true"></span>
+      <span class="server-status-text" id="server-status-text" role="status" aria-live="polite">Checking server…</span>
+      <button type="button" class="server-retry" id="server-status-retry" title="Check for the server now" hidden>Retry</button>
+    </div>
+
     <button class="profile-chip" id="profile-btn" title="Switch profile" aria-haspopup="dialog" aria-label="Switch profile">
       <span class="avatar" id="profile-avatar" aria-hidden="true">JP</span>
       <span class="profile-chip-name" id="profile-chip-name">Profile</span>
@@ -994,10 +1000,18 @@
     var retry = document.getElementById("file-guard-retry");
     if (!status) return;
     var checking = false;
+    var timer = null;
+    var RETRY_EVERY = 3000;
+
+    function watch() {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(check, RETRY_EVERY);
+    }
 
     function check() {
       if (checking) return;
       checking = true;
+      window.clearTimeout(timer);
       if (retry) retry.disabled = true;
       status.classList.remove("is-found", "is-error");
       status.textContent = "Checking whether the server is running…";
@@ -1009,8 +1023,11 @@
         })
         .catch(function () {
           status.textContent =
-            "The server did not answer. Start it with the command above, then check again.";
+            "The server did not answer. Start it with the command above — this screen keeps checking and opens the dashboard on its own.";
           status.classList.add("is-error");
+          // The server usually comes up a few seconds after this screen does,
+          // so keep looking instead of waiting for another click.
+          watch();
         })
         .then(function () {
           checking = false;

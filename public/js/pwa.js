@@ -42,4 +42,12 @@ export function showOfflineScreen() {
   if (retry) retry.addEventListener("click", () => window.location.reload());
   const open = document.getElementById("file-guard-open");
   if (open) open.hidden = true;
+  // The launcher usually brings the server back seconds after this screen
+  // appears, so keep looking and step into the dashboard as soon as it answers.
+  window.setInterval(() => {
+    if (document.hidden) return;
+    fetch("/api/health", { cache: "no-store" })
+      .then(() => window.location.reload())
+      .catch(() => {});
+  }, 4000);
 }

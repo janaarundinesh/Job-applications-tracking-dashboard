@@ -401,11 +401,66 @@ def test_offline_start_screen_offers_a_retry(page, context):
     assert page.locator("#file-guard").is_visible()
     assert page.locator("#file-guard-title").inner_text() == "Start the Job Pipeline server"
 
-    # Once the server is back, "Check again" brings the dashboard up.
-    context.set_offline(False)
+    # "Check again" while the server is still down leaves this screen standing.
+    assert page.locator("#file-guard-retry").is_visible()
     page.click("#file-guard-retry")
-    page.wait_for_selector("#welcome-list [data-enter-profile]", timeout=10000)
+    page.wait_for_selector("html.is-offline", state="attached", timeout=10000)
+    assert page.locator("#file-guard").is_visible()
+
+    # Once the server is back, the screen steps into the dashboard on its own:
+    # the server usually comes up seconds after this screen appears.
+    context.set_offline(False)
+    page.wait_for_selector("#welcome-list [data-enter-profile]", timeout=20000)
     assert page.evaluate("document.documentElement.classList.contains('is-offline')") is False
+
+
+def test_the_topbar_reports_the_server_as_active(page):
+    """The pill answers "is the small local server still there?" at a glance."""
+    enter_profile(page)
+    page.wait_for_selector('#server-status[data-state="online"]')
+    assert page.locator("#server-status-text").inner_text() == "Server active"
+    # Nothing to retry while it answers.
+    assert page.locator("#server-status-retry").is_hidden()
+
+
+def test_a_failed_request_turns_the_indicator_red_and_retry_clears_it(page):
+    enter_profile(page)
+    page.wait_for_selector('#server-status[data-state="online"]')
+
+    # The server stops. This stands in for it: the endpoints answer nothing at
+    # all, the way a stopped process does.
+    asked = []
+
+    def dead_server(route):
+        asked.append(route.request.url)
+        route.abort()
+
+    page.route("**/api/health", dead_server)
+    page.route("**/api/resumes", dead_server)
+
+    # Opening a tab asks the server for its list, and that request now fails:
+    # the pill has to say so at once, without waiting for the next heartbeat.
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
+    assert page.locator("#server-status-text").inner_text() == "Server offline"
+    assert page.locator("#server-status-retry").is_visible()
+
+    # Retry checks there and then, and does not claim the server is back.
+    page.click("#server-status-retry")
+    page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
+    assert any(url.endswith("/api/health") for url in asked)
+
+    # A server that is down long enough to notice: coming back is worth saying,
+    # and the way back in is on screen.
+    page.wait_for_timeout(5200)
+    page.unroute("**/api/health")
+    page.unroute("**/api/resumes")
+    if page.locator("#server-status-retry").is_visible():
+        page.click("#server-status-retry")
+    page.wait_for_selector('#server-status[data-state="online"]', timeout=20000)
+    assert page.locator("#server-status-text").inner_text() == "Server active"
+    assert page.locator("#server-status-retry").is_hidden()
+    assert "is back" in page.locator("#toasts").inner_text()
 
 
 RESUME_SOURCE = r"""\documentclass[11pt]{article}
