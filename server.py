@@ -949,6 +949,43 @@ def get_application(db_path, profile_id, app_id):
         conn.close()
 
 
+def job_key(company, role):
+    """What makes two rows the same posting: casing and spacing do not count."""
+    squash = lambda value: " ".join(str(value or "").split()).casefold()  # noqa: E731
+    return squash(company) + "\u0000" + squash(role)
+
+
+def duplicate_jobs(db_path, profile_id, company, role):
+    """Jobs already on this profile with the same company and role.
+
+    Trashed jobs do not count: a posting you threw away is one you may genuinely
+    want to add again.
+    """
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, company, role, status, phase, applied_on FROM applications"
+            " WHERE profile_id = ? AND deleted_at IS NULL"
+            " ORDER BY id ASC",
+            (profile_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    key = job_key(company, role)
+    return [
+        {
+            "id": row["id"],
+            "company": row["company"],
+            "role": row["role"],
+            "status": row["status"],
+            "phase": row["phase"],
+            "applied_on": row["applied_on"] or "",
+        }
+        for row in rows
+        if job_key(row["company"], row["role"]) == key
+    ]
+
+
 def create_application(db_path, profile_id, data):
     stamp = now_iso()
     conn = connect(db_path)
@@ -2245,15 +2282,31 @@ def prepare_import_row(item):
     return row
 
 
-def import_applications(db_path, profile_id, items):
+def import_applications(db_path, profile_id, items, force=False):
+    """Insert rows from a file, leaving out jobs the profile already has.
+
+    A file lists postings, not applications, so importing the same one twice used
+    to double every job. Rows matching an existing company and role are counted
+    as duplicates and reported instead, unless force is set — the import dialog
+    asks which of the two the user wants before it comes this far.
+    """
     if not isinstance(items, list):
         raise ApiError(400, "Import expects a JSON array of applications")
     stamp = now_iso()
     imported = 0
     skipped = 0
     problems = []
+    duplicates = []
     conn = connect(db_path)
     try:
+        known = {}
+        if not force:
+            for row in conn.execute(
+                "SELECT id, company, role FROM applications"
+                " WHERE profile_id = ? AND deleted_at IS NULL",
+                (profile_id,),
+            ).fetchall():
+                known.setdefault(job_key(row["company"], row["role"]), row["id"])
         for index, item in enumerate(items):
             try:
                 data = clean_create(prepare_import_row(item))
@@ -2265,6 +2318,18 @@ def import_applications(db_path, profile_id, items):
                         "row": index + 1,
                         "company": _flat_text(company)[:160],
                         "reason": error.message,
+                    }
+                )
+                continue
+            key = job_key(data["company"], data["role"])
+            if not force and key in known:
+                skipped += 1
+                duplicates.append(
+                    {
+                        "row": index + 1,
+                        "company": data["company"],
+                        "role": data["role"],
+                        "existing_id": known[key],
                     }
                 )
                 continue
@@ -2280,11 +2345,12 @@ def import_applications(db_path, profile_id, items):
                 " VALUES (?, ?, ?, ?)",
                 (cursor.lastrowid, None, data["status"], stamp),
             )
+            known.setdefault(key, cursor.lastrowid)
             imported += 1
         conn.commit()
     finally:
         conn.close()
-    return imported, skipped, problems
+    return imported, skipped, problems, duplicates
 
 
 # --------------------------------------------------------------------------
@@ -2792,11 +2858,17 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(405, "Method not allowed")
                 payload = self.read_json()
                 items = payload.get("applications") if isinstance(payload, dict) else payload
-                imported, skipped, problems = import_applications(
-                    self.db_path, profile_id, items
+                force = isinstance(payload, dict) and payload.get("force") is True
+                imported, skipped, problems, duplicates = import_applications(
+                    self.db_path, profile_id, items, force=force
                 )
                 return self.send_json(
-                    {"imported": imported, "skipped": skipped, "problems": problems}
+                    {
+                        "imported": imported,
+                        "skipped": skipped,
+                        "problems": problems,
+                        "duplicates": duplicates,
+                    }
                 )
 
             if parts[0] == "applications" and len(parts) == 3 and parts[2] == "restore":
@@ -2846,7 +2918,20 @@ class Handler(BaseHTTPRequestHandler):
                         list_applications(self.db_path, profile_id, trashed=trashed)
                     )
                 if self.command == "POST":
-                    data = clean_create(self.read_json())
+                    payload = self.read_json()
+                    data = clean_create(payload)
+                    # Same company and role as a job you already have: say which
+                    # one, and let the form decide whether to add a second copy.
+                    if payload.get("force") is not True:
+                        matches = duplicate_jobs(
+                            self.db_path, profile_id, data["company"], data["role"]
+                        )
+                        if matches:
+                            raise ApiError(
+                                409,
+                                "That company and role are already on your list",
+                                {"matches": matches},
+                            )
                     return self.send_json(
                         create_application(self.db_path, profile_id, data), 201
                     )

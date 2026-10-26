@@ -309,7 +309,7 @@ def test_import_without_a_status_saves_to_apply(api):
             ]
         },
     )
-    assert response.data == {"imported": 1, "skipped": 0, "problems": []}
+    assert response.data == {"imported": 1, "skipped": 0, "problems": [], "duplicates": []}
 
     job = api.get("/api/applications").data[0]
     assert job["phase"] == "to_apply"
@@ -344,7 +344,7 @@ def test_import_shortens_long_fields_instead_of_losing_the_job(api):
             ]
         },
     )
-    assert response.data == {"imported": 1, "skipped": 0, "problems": []}
+    assert response.data == {"imported": 1, "skipped": 0, "problems": [], "duplicates": []}
 
     job = api.get("/api/applications").data[0]
     assert job["company"] == "Airbus Defence and Space GmbH"
@@ -370,6 +370,87 @@ def test_import_says_why_a_row_was_skipped(api):
         {"row": 1, "company": "", "reason": "Company is required"}
     ]
     assert [app["company"] for app in api.get("/api/applications").data] == ["Kept Co"]
+
+
+def test_adding_the_same_company_and_role_asks_first(api):
+    first = api.create(company="Airbus Defence and Space GmbH", role="Simulation Developer")
+    duplicate = api.post(
+        "/api/applications",
+        # Casing and spacing do not make it a different posting.
+        {"company": "airbus  defence and space gmbh ", "role": " Simulation   Developer"},
+    )
+    assert duplicate.status == 409
+    assert [match["id"] for match in duplicate.data["matches"]] == [first["id"]]
+    assert duplicate.data["matches"][0]["company"] == "Airbus Defence and Space GmbH"
+    assert len(api.get("/api/applications").data) == 1
+
+    # A different role, or a different company, is a different job.
+    api.create(company="Airbus Defence and Space GmbH", role="Systems Engineer")
+    api.create(company="Marvel Fusion", role="Simulation Developer")
+    assert api.post(
+        "/api/applications",
+        {"company": "Marvel Fusion", "role": "Simulation Developer"},
+    ).status == 409
+    assert len(api.get("/api/applications").data) == 3
+
+
+    # A trashed job is not in the way: the posting may honestly come back.
+    api.delete("/api/applications/%d" % first["id"])
+    again = api.post(
+        "/api/applications",
+        {"company": "Airbus Defence and Space GmbH", "role": "Simulation Developer"},
+    )
+    assert again.status == 201
+
+    # Add anyway, which is what the form sends when the user chooses it.
+    forced = api.post(
+        "/api/applications",
+        {"company": "Airbus Defence and Space GmbH", "role": "Simulation Developer", "force": True},
+    )
+    assert forced.status == 201
+    assert len(api.get("/api/applications").data) == 4
+
+
+def test_import_skips_jobs_already_on_the_list(api):
+    """Importing the same postings twice must not double every job."""
+    first = api.create(company="Airbus", role="Simulation Developer")
+    listing = {"company": "airbus", "role": "simulation developer"}
+
+    skipped = api.post("/api/import", {"applications": [listing]})
+    assert skipped.status == 200
+    assert skipped.data["imported"] == 0
+    assert skipped.data["skipped"] == 1
+    assert skipped.data["duplicates"] == [
+        {
+            "row": 1,
+            "company": "airbus",
+            "role": "simulation developer",
+            "existing_id": first["id"],
+        }
+    ]
+    assert len(api.get("/api/applications").data) == 1
+
+    # Import anyway writes the copy the dialog warned about.
+    forced = api.post("/api/import", {"applications": [listing], "force": True})
+    assert forced.data["imported"] == 1
+    assert forced.data["duplicates"] == []
+    assert len(api.get("/api/applications").data) == 2
+
+    # A posting repeated within one file is a duplicate of the row before it.
+    pair = api.post(
+        "/api/import",
+        {
+            "applications": [
+                {"company": "New Co", "role": "Engineer"},
+                {"company": "New Co", "role": "Engineer"},
+            ]
+        },
+    )
+    assert pair.data["imported"] == 1
+    assert pair.data["skipped"] == 1
+    assert pair.data["duplicates"][0]["row"] == 2
+    assert pair.data["duplicates"][0]["existing_id"]
+    assert len(api.get("/api/applications").data) == 3
 
 
 def test_import_keeps_rows_that_name_a_stage_applied(api):

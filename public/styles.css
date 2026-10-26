@@ -2746,6 +2746,27 @@ html.is-welcome .page { display: none; }
   cursor: pointer;
 }
 .savepdf-replace input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+/* The jobs a duplicate add or import matched. */
+.dup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.dup-list[hidden] { display: none; }
+.dup-item {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.dup-item-name { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.dup-item-sub { display: block; margin-top: 1px; font-size: 11px; color: var(--text-faint); }
 .picker-empty { margin: 8px 0 0; font-size: 13px; color: var(--text-dim); }
 .savepdf-heading { margin: 14px 0 0; }
 

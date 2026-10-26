@@ -92,6 +92,81 @@ def test_add_application_shows_up_in_the_table(page):
     page.wait_for_selector("#drawer", state="hidden")
 
 
+def test_a_duplicate_job_is_offered_instead_of_added(page):
+    """The same posting should point at the row you have, not add a second."""
+    enter_profile(page)
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.fill('input[name="company"]', "Acme Robotics")
+    page.fill('input[name="role"]', "Frontend Engineer")
+    page.click("#modal-save")
+    page.wait_for_selector("#applied-table-body tr")
+
+    # Different casing and spacing are still the same posting.
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.fill('input[name="company"]', "acme  robotics")
+    page.fill('input[name="role"]', "frontend engineer")
+    page.click("#modal-save")
+    page.wait_for_selector(".dup-open")
+    assert "Already on your list" in page.inner_text(".dup-title")
+    assert "Acme Robotics" in page.inner_text(".dup-list")
+    assert "Frontend Engineer" in page.inner_text(".dup-list")
+
+    # Opening it goes to the job that exists, and nothing is created.
+    page.click(".dup-open")
+    page.wait_for_selector("#drawer:not([hidden])")
+    assert "Frontend Engineer" in page.inner_text("#drawer")
+    assert page.locator("#count-applied").inner_text() == "1"
+    page.click("#drawer .drawer-close")
+    page.wait_for_selector("#drawer", state="hidden")
+
+    # Add anyway is still a real choice, for a genuine second application.
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.fill('input[name="company"]', "Acme Robotics")
+    page.fill('input[name="role"]', "Frontend Engineer")
+    page.click("#modal-save")
+    page.wait_for_selector(".dup-add")
+    page.click(".dup-add")
+    page.wait_for_function(
+        "() => document.querySelectorAll('#applied-table-body tr').length === 2"
+    )
+
+    # A file of postings you already have asks the same question, once for all.
+    payload = json.dumps([{"company": "ACME ROBOTICS", "role": "Frontend Engineer"}]).encode(
+        "utf-8"
+    )
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.click('[data-mode="file"]')
+    page.set_input_files(
+        "#modal-import-file",
+        {"name": "jobs.json", "mimeType": "application/json", "buffer": payload},
+    )
+    page.wait_for_selector(".dup-skip")
+    assert "already on your list" in page.inner_text(".dup-title").lower()
+    page.click(".dup-skip")
+    page.wait_for_function(
+        "() => /every row is already on your list/i.test(document.querySelector('#import-status').textContent)"
+    )
+    assert page.locator("#modal-backdrop").is_visible()
+
+    # Import anyway writes the copy the warning named.
+    page.set_input_files(
+        "#modal-import-file",
+        {"name": "jobs.json", "mimeType": "application/json", "buffer": payload},
+    )
+    page.wait_for_selector(".dup-add")
+    page.click(".dup-add")
+    page.wait_for_selector("#modal-backdrop", state="hidden")
+    # A row naming no stage lands in To apply, beside the two applied copies.
+    page.wait_for_function(
+        "() => document.querySelectorAll('#toapply-table-body tr').length === 1"
+    )
+    assert page.locator("#count-applied").inner_text() == "2"
+
+
 def test_importing_postings_without_a_status_saves_them_to_apply(page):
     """A file of postings is a to-apply list; the analysis it carries is kept."""
     payload = json.dumps(

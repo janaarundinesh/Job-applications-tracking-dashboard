@@ -121,7 +121,33 @@ export async function submitForm(event) {
       });
       toast("Job updated");
     } else {
-      saved = await api("/api/applications", { method: "POST", body: JSON.stringify(data) });
+      try {
+        saved = await api("/api/applications", { method: "POST", body: JSON.stringify(data) });
+      } catch (duplicate) {
+        const matches = duplicate.status === 409 && duplicate.data ? duplicate.data.matches || [] : [];
+        if (!matches.length) throw duplicate;
+        const choice = await askDuplicates({
+          title: "Already on your list",
+          text:
+            matches.length === 1
+              ? "This company and role are already saved. Open that job, or add a second copy."
+              : matches.length + " jobs with this company and role are already saved. Open one, or add a second copy.",
+          matches: matches,
+          openLabel: "Open job",
+        });
+        if (choice === "open") {
+          const job = matches[0];
+          closeModal();
+          setTab(job.phase === "to_apply" ? "to_apply" : "applied");
+          openDrawer(job.id);
+          return;
+        }
+        if (choice !== "add") return;
+        saved = await api("/api/applications", {
+          method: "POST",
+          body: JSON.stringify(Object.assign({}, data, { force: true })),
+        });
+      }
       toast(saved.phase === "to_apply" ? "Job saved to apply" : "Application added");
     }
     updateLocal(saved);
@@ -368,6 +394,50 @@ export function promptName(config) {
       if (dot > 0) field.setSelectionRange(0, dot);
       else field.select();
     }, 30);
+  });
+}
+
+
+/* A job (or a file of jobs) matches one already on the list. Resolves with
+   "open" (the existing job), "skip" (import the rest), "add" (a second copy),
+   or null when the user backs out. */
+export function askDuplicates(config) {
+  const settings = config || {};
+  const template = $("#duplicate-prompt-template");
+  if (!template) return Promise.resolve(null);
+  const matches = Array.isArray(settings.matches) ? settings.matches : [];
+
+  return new Promise((resolve) => {
+    const dialog = openDialog(template, resolve);
+    const backdrop = dialog.backdrop;
+    backdrop.querySelector(".dup-title").textContent = settings.title || "Already on your list";
+    backdrop.querySelector(".dup-text").textContent = settings.text || "";
+    const list = backdrop.querySelector(".dup-list");
+    list.innerHTML = matches
+      .map((job) => {
+        const phase = job.phase === "to_apply" ? "To apply" : "Applied";
+        return (
+          '<li class="dup-item"><span class="dup-item-name">' + esc(job.company) + "</span>" +
+          '<span class="dup-item-sub">' + esc(job.role) + " · " + phase + "</span></li>"
+        );
+      })
+      .join("");
+    list.hidden = !matches.length;
+
+    const openButton = backdrop.querySelector(".dup-open");
+    const skipButton = backdrop.querySelector(".dup-skip");
+    const addButton = backdrop.querySelector(".dup-add");
+    openButton.hidden = !settings.openLabel;
+    openButton.textContent = settings.openLabel || "Open it";
+    skipButton.hidden = !settings.skipLabel;
+    skipButton.textContent = settings.skipLabel || "Skip duplicates";
+    addButton.textContent = settings.addLabel || "Add anyway";
+
+    backdrop.querySelector(".dup-cancel").addEventListener("click", () => dialog.finish(null));
+    openButton.addEventListener("click", () => dialog.finish("open"));
+    skipButton.addEventListener("click", () => dialog.finish("skip"));
+    addButton.addEventListener("click", () => dialog.finish("add"));
+    window.setTimeout(() => addButton.focus(), 30);
   });
 }
 

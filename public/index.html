@@ -1007,6 +1007,24 @@
   </div>
 </template>
 
+<template id="duplicate-prompt-template">
+  <div class="modal-backdrop confirm-backdrop picker-backdrop">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Already on your list">
+      <div class="modal-body">
+        <h3 class="confirm-title dup-title"></h3>
+        <p class="confirm-text dup-text"></p>
+        <ul class="dup-list"></ul>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost dup-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost dup-open" hidden>Open it</button>
+        <button type="button" class="btn btn-ghost dup-skip" hidden>Skip duplicates</button>
+        <button type="button" class="btn btn-primary dup-add">Add anyway</button>
+      </footer>
+    </div>
+  </div>
+</template>
+
 <template id="replace-prompt-template">
   <div class="modal-backdrop confirm-backdrop picker-backdrop">
     <div class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Replace the existing document">

@@ -3,7 +3,7 @@
 
 import { $, api, download, state, toast, todayISO } from "./core.js";
 import { loadApps } from "./data.js";
-import { closeModal } from "./dialogs.js";
+import { askDuplicates, closeModal } from "./dialogs.js";
 import { setTab } from "./workspace.js";
 
 
@@ -254,8 +254,20 @@ export function rowsFromJSON(text) {
 }
 
 
-export async function importRows(rows) {
-  const result = await api("/api/import", { method: "POST", body: JSON.stringify({ applications: rows }) });
+/* The same rule the server uses: casing and spacing do not make a new job. */
+export function jobKey(company, role) {
+  const squash = (value) =>
+    String(value == null ? "" : value).trim().replace(/\s+/g, " ").toLowerCase();
+  return squash(company) + "\u0000" + squash(role);
+}
+
+
+export async function importRows(rows, options) {
+  const force = Boolean(options && options.force);
+  const result = await api("/api/import", {
+    method: "POST",
+    body: JSON.stringify({ applications: rows, force: force }),
+  });
   await loadApps();
   return result;
 }
@@ -281,13 +293,55 @@ export async function handleImportFile(file, options) {
     const parsed = isCSV ? rowsFromCSV(text) : rowsFromJSON(text);
     if (!parsed.rows.length) {
       throw new Error("No jobs found. A CSV needs company and role columns.");
-    }    if (status) status("Importing " + parsed.rows.length + " job(s)…", "ok");
-    const result = await importRows(parsed.rows);
+    }
+    // Postings already on the list are named before anything is written, so a
+    // second import of the same file is a decision rather than a pile of copies.
+    const known = new Map();
+    state.apps.forEach((app) => known.set(jobKey(app.company, app.role), app));
+    let rows = parsed.rows;
+    let force = false;
+    const duplicates = rows.filter((row) => known.has(jobKey(row.company, row.role)));
+    if (duplicates.length) {
+      const listed = new Set();
+      const matches = [];
+      duplicates.forEach((row) => {
+        const app = known.get(jobKey(row.company, row.role));
+        if (listed.has(app.id)) return;
+        listed.add(app.id);
+        matches.push(app);
+      });
+      const choice = await askDuplicates({
+        title: "Some jobs are already on your list",
+        text:
+          duplicates.length + " of " + rows.length + " row" + (rows.length === 1 ? "" : "s") +
+          " match a job you already have. Skip them, or import everything anyway.",
+        matches: matches,
+        skipLabel: "Skip them",
+        addLabel: "Import anyway",
+      });
+      if (!choice) {
+        if (status) status("Import cancelled.", "");
+        return;
+      }
+      if (choice === "skip") {
+        rows = rows.filter((row) => !known.has(jobKey(row.company, row.role)));
+      } else {
+        force = true;
+      }
+    }
+    if (!rows.length) {
+      const message = "Every row is already on your list — nothing to import.";
+      if (status) status(message, "ok");
+      else toast(message);
+      return;
+    }
+    if (status) status("Importing " + rows.length + " job(s)…", "ok");
+    const result = await importRows(rows, { force: force });
     const imported = Number(result.imported) || 0;
     const skipped = parsed.skipped + (Number(result.skipped) || 0);
     // A row that names no status was never applied to; the server saves it to apply.
     const savedRows = Math.min(
-      parsed.rows.filter((row) => !row.phase && !row.status).length,
+      rows.filter((row) => !row.phase && !row.status).length,
       imported
     );
     const sentRows = imported - savedRows;

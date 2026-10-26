@@ -548,6 +548,9 @@ export async function request(path, options) {
     const message = payload && payload.error ? payload.error : "Request failed (" + response.status + ")";
     const error = new Error(message);
     error.status = response.status;
+    // Structured detail some failures carry: the jobs a duplicate add matched,
+    // for instance, so the form can offer to open one instead of guessing.
+    if (payload) error.data = payload;
     // A failed compile carries the TeX log so the editor can show it.
     if (payload && typeof payload.log === "string") error.log = payload.log;
     // The profile locked while this tab was open (or its token expired).

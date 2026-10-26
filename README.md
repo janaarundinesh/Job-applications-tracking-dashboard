@@ -125,7 +125,7 @@ Click **Add job** (or press `N`). There are three ways in:
 
 1. **Manual** — fill in the form yourself, choosing **Applied** or **Saved — not applied yet** under Status.
 2. **From link** — paste a job posting URL and press **Fetch details**. The server reads the page's `schema.org JobPosting` JSON-LD (used by Greenhouse, Lever, Workable, many company career sites) and falls back to OpenGraph metadata. It fills company, role, location, work mode, salary, source, the job description, and the posting URL for you to review. Some sites (LinkedIn, many Workday boards) block automated requests or render postings with JavaScript — you'll get a clear error and can switch to manual entry. Nothing is saved without your confirmation. Only public `http(s)` addresses are fetched; private/loopback addresses are refused.
-3. **Import file** — drop or choose a `.csv` or `.json` file. Rows are appended; existing jobs are kept. Also available from **Export ▾ → Import CSV or JSON**.
+3. **Import file** — drop or choose a `.csv` or `.json` file. Rows are appended, except postings you already have: the file is checked against your list first and you choose whether to skip those rows or import them anyway. Also available from **Export ▾ → Import CSV or JSON**.
 
 ### CSV format
 
@@ -142,6 +142,10 @@ Company,Role,Phase,Status,Applied On,Location,Work Mode,Source,Salary,Match %,Jo
 A row that names **no status and no phase was never sent**, so it is imported as *Saved — not applied yet* and appears under **To apply** with today's date left empty. Add a `status` or `phase` column when the file really does describe applications you made; a named stage (even `Rejected`) keeps the row in Applied. After an import the dashboard opens the list the rows actually went to, and the message says how many were saved to apply versus marked as applied.
 
 No row is dropped over a field that is merely long: an aggregator's source line or tracking URL is shortened to the app's limit (ending in `…`) so the posting still arrives. A row that really cannot be used — no company or no role — is named in the import message with the reason, instead of a bare count.
+
+### Duplicates
+
+A job counts as the same posting when its **company and role** match, ignoring case and extra spaces. Adding one you already have — by hand, from a fetched link, or in an imported file — opens a dialog naming the job that exists, with **Open job** to go straight to it, **Add anyway** for a genuine second application, or **Cancel**. Imports check the whole file against your list, and against the rows before it in the same file, and offer **Skip them** or **Import anyway** before anything is written; skipping everything says so and leaves the file unimported. Jobs in the Trash don't count, so a posting you threw away can be added again, and two different roles at the same company are two jobs.
 
 Files that come out of a job-search tool often carry more than the posting: a match estimate, a note on why the role fits, and the requirements the posting asks for that your resume does not cover. Two of those are kept rather than dropped — `estimated_match_pct` becomes the job's **Resume match**, and `why_it_matches` / `important_missing_requirements` are written into the job's **notes** under those headings, which the detail drawer and the search box already read. Rename them if your file spells them differently: `match`, `match_percentage`, `match_score` and `resume_match` also count as the match, and `missing_requirements` or `gaps` as the gaps. Anything else the file carries (`rank`, `employment_type`, `application_deadline`, …) is ignored.
 
@@ -304,7 +308,9 @@ requirements-dev.txt  pytest and Playwright, only needed for running the tests
 ```
 GET    /api/applications                      list all jobs
 GET    /api/applications/<id>                 one job + status events + documents
-POST   /api/applications                      create
+POST   /api/applications                      create; answers 409 with {"matches": [...]} when that
+                                              company and role are already on the list, unless
+                                              {"force": true} adds a second copy
 PATCH  /api/applications/<id>                 partial update (phase, status, description, match_pct, …);
                                               match_pct is 0–100, "" clears it
                                               { "mark_reviewed": true } records a review
@@ -355,7 +361,9 @@ POST   /api/profiles/<id>/pin                  { "pin": "1234" } sets or changes
                                               once set); { "remove": true, "current_pin": "…" } clears it
 POST   /api/profiles/<id>/unlock               { "pin": "1234" } → { "token": "…" }
 POST   /api/profiles/<id>/lock                 revoke every unlock token for the profile
-POST   /api/import                            { "applications": [ … ] }
+POST   /api/import                            { "applications": [ … ] }; rows matching an existing
+                                              job are skipped and listed under "duplicates",
+                                              {"force": true} imports them anyway
 POST   /api/extract                           { "url": "https://…" }
 GET    /api/session                           { "token": "…" } for this run of the server
 GET    /api/backup                            a zip of the database and every document
