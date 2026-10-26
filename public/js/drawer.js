@@ -1,7 +1,7 @@
 /* Job Pipeline — The job detail drawer, its documents and the document preview.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchBand, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
+import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fetchFile, fmtDate, formatSize, formatTimestamp, isOverdue, jobHref, matchBadge, matchBand, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
 import { updateLocal } from "./data.js";
 
 
@@ -67,8 +67,10 @@ export function drawerHTML(app, events, documents) {
     return '<div class="kv"><dt>' + esc(label) + "</dt><dd" + (value ? "" : ' class="is-empty"') + ">" + content + "</dd></div>";
   };
   const contact = [app.contact_name, app.contact_email].filter(Boolean).join(" · ");
-  const jobLink = /^https?:\/\//i.test(app.job_url || "")
-    ? '<a href="' + esc(app.job_url) + '" target="_blank" rel="noopener noreferrer">Open posting ↗</a>'
+  const href = jobHref(app.job_url);
+  const jobLink = href
+    ? '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer" title="' +
+      esc(String(app.job_url).trim()) + '">Open posting ↗</a>'
     : app.job_url
       ? esc(app.job_url)
       : "";

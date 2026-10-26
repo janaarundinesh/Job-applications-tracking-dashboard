@@ -275,6 +275,18 @@ export function matchPct(app) {
 
 
 /**
+ * The address part of a saved job URL, or "" when the value is not one. People
+ * paste notes after the address ("…/job (posted 2 days ago; apply on their
+ * site)"), and a URL never contains a space, so the link is the first token.
+ */
+export function jobHref(value) {
+  const raw = String(value || "").trim();
+  if (!/^https?:\/\//i.test(raw)) return "";
+  return raw.split(/\s+/)[0];
+}
+
+
+/**
  * Which colour band a match estimate belongs to. The filter dropdown cuts the
  * same way (80+, 60–79, 40–59, below 40), so the colour of a number and the
  * band that hides it always agree.

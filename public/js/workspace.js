@@ -1,7 +1,7 @@
 /* Job Pipeline — The Applied / To apply / Trash workspace: table, board and filters.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, matchBand, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
+import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, emptyState, esc, fmtDate, fmtShortDate, isOverdue, jobHref, matchBadge, matchBand, matchPct, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
 import { appsIn, renderProfileChrome, updateBulkBar, visibleApps } from "./data.js";
 import { renderOverview } from "./overview.js";
 import { renderResumePanel } from "./resume.js";
@@ -219,14 +219,6 @@ export function renderWorkspace() {
 export function appliedRow(app) {
   const meta = [app.location, MODE_LABEL[app.work_mode] || ""].filter(Boolean).join(" · ");
   const review = needsReview(app);
-  const nextStep = app.next_step || (app.next_step_on ? "Follow up" : "");
-  const nextCell = nextStep
-    ? '<span class="step-text">' + esc(nextStep) + "</span>" +
-      (app.next_step_on
-        ? '<span class="due-text ' + (isOverdue(app.next_step_on) ? "is-overdue" : "") + '">' +
-          esc(dueLabel(app.next_step_on)) + "</span>"
-        : "")
-    : '<span class="step-empty">—</span>';
   return (
     '<tr data-app-id="' + app.id + '" tabindex="0"' +
     (state.selection.has(app.id) ? ' class="is-selected"' : "") + ">" +
@@ -245,7 +237,7 @@ export function appliedRow(app) {
     "</select></td>" +
     '<td class="date-cell">' + esc(fmtDate(app.applied_on)) +
     '<span class="rel">' + esc(relativeDays(app.applied_on)) + "</span></td>" +
-    '<td class="next-cell">' + nextCell + "</td>" +
+    linkCell(app) +
     '<td><span class="source-chip' + (app.source ? "" : " is-empty") + '">' +
     esc(app.source || "—") + "</span></td>" +
     '<td class="salary-cell"><span>' + esc(app.salary || "—") + "</span></td>" +
@@ -261,7 +253,6 @@ export function appliedRow(app) {
 
 export function toApplyRow(app) {
   const meta = [app.location, MODE_LABEL[app.work_mode] || ""].filter(Boolean).join(" · ");
-  const nextStep = app.next_step || (app.next_step_on ? "Follow up" : "");
   return (
     '<tr data-app-id="' + app.id + '" tabindex="0"' +
     (state.selection.has(app.id) ? ' class="is-selected"' : "") + ">" +
@@ -279,13 +270,7 @@ export function toApplyRow(app) {
     esc(app.source || "—") + "</span></td>" +
     '<td class="salary-cell"><span>' + esc(app.salary || "—") + "</span></td>" +
     matchCell(app) +
-    '<td class="next-cell">' + (nextStep
-      ? '<span class="step-text">' + esc(nextStep) + "</span>" +
-        (app.next_step_on
-          ? '<span class="due-text ' + (isOverdue(app.next_step_on) ? "is-overdue" : "") + '">' +
-            esc(dueLabel(app.next_step_on)) + "</span>"
-          : "")
-      : '<span class="step-empty">—</span>') + "</td>" +
+    linkCell(app) +
     '<td class="actions-col"><div class="row-actions">' +
     '<button type="button" class="mark-applied" data-action="mark-applied" data-id="' + app.id + '" title="Mark as applied" aria-label="Mark ' + esc(app.company) + ' as applied">' + ICON.check + "</button>" +
     '<button type="button" data-action="edit" data-id="' + app.id + '" title="Edit" aria-label="Edit ' + esc(app.company) + '">' + ICON.pencil + "</button>" +
@@ -314,6 +299,29 @@ export function trashRow(app) {
     '<button type="button" class="restore" data-action="restore" data-id="' + app.id + '" title="Restore" aria-label="Restore ' + esc(app.company) + '">' + ICON.restore + "</button>" +
     '<button type="button" class="danger" data-action="purge" data-id="' + app.id + '" title="Delete permanently" aria-label="Delete ' + esc(app.company) + ' permanently">' + ICON.trash + "</button>" +
     "</div></td></tr>"
+  );
+}
+
+
+/*
+ * The job posting link, as its own column: the saved address with the scheme
+ * and a leading www. trimmed for reading, the whole saved value in the
+ * tooltip. A value that is not a web address (notes people paste by hand)
+ * stays plain text rather than becoming a link that goes nowhere.
+ */
+function linkCell(app) {
+  const raw = String(app.job_url || "").trim();
+  if (!raw) return '<td class="link-cell is-empty">—</td>';
+  const href = jobHref(raw);
+  const plain = '<td class="link-cell" title="' + esc(raw) + '">';
+  if (!href) {
+    return plain + '<span class="link-plain">' + esc(raw) + "</span></td>";
+  }
+  const label = href.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+  return (
+    plain +
+    '<a class="link-value" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' +
+    ' title="' + esc(raw) + '">' + esc(label) + " ↗</a></td>"
   );
 }
 

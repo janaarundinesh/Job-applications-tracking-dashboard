@@ -1185,10 +1185,19 @@ kbd {
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date-cell .rel { font-size: 11px; color: var(--text-faint); display: block; }
 
-.next-cell { max-width: 220px; }
-.next-cell .step-text { display: block; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.next-cell .due-text { font-size: 11px; color: var(--danger); }
-.next-cell .due-text.is-overdue { color: var(--danger); font-weight: 600; }
+.link-col { width: 190px; }
+.link-cell { max-width: 190px; }
+.link-cell .link-value,
+.link-cell .link-plain {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.link-cell .link-value { color: var(--accent); text-decoration: none; }
+.link-cell .link-value:hover { text-decoration: underline; }
+.link-cell .link-plain { color: var(--text-dim); }
+.link-cell.is-empty { color: var(--text-faint); }
 .next-cell .step-empty { color: var(--text-faint); }
 
 .source-chip {

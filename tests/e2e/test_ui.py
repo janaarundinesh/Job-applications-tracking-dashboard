@@ -851,6 +851,84 @@ def test_long_values_do_not_push_the_match_column_off_screen(page):
     )
 
 
+def test_the_tables_show_the_job_link_instead_of_the_next_step(page):
+    for company, url in (
+        (
+            "Linked Co",
+            "https://de.linkedin.com/jobs/view/123 (listed 2 days ago; apply on their site)",
+        ),
+        ("Plain Co", "notes: ask Ana for a referral"),
+        ("No Link Co", ""),
+    ):
+        payload = {
+            "company": company,
+            "role": "Engineer",
+            "phase": "to_apply",
+            "next_step": "Send follow-up",
+            "next_step_on": "2026-11-05",
+        }
+        if url:
+            payload["job_url"] = url
+        assert api_post(page, "/api/applications", payload)["status"] == 201
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+
+    # Link has taken the column's place, and the next step is out of the table.
+    headers = page.locator("#toapply-table-shell thead th")
+    assert headers.nth(7).inner_text().strip().lower() == "link"
+    assert "next step" not in page.locator("#toapply-table-shell thead").inner_text().lower()
+    assert page.locator("#applied-table-shell thead th").nth(5).inner_text().strip().lower() == "link"
+
+    linked = page.locator("#toapply-table-body tr", has_text="Linked Co")
+    anchor = linked.locator(".link-cell a")
+    # The pasted note after the address is not part of the link.
+    assert anchor.get_attribute("href") == "https://de.linkedin.com/jobs/view/123"
+    assert anchor.get_attribute("target") == "_blank"
+    assert anchor.inner_text().strip() == "de.linkedin.com/jobs/view/123 ↗"
+    assert linked.locator(".link-cell").get_attribute("title").endswith("apply on their site)")
+    assert "Send follow-up" not in linked.inner_text()
+    # A long address is clipped to one line, like the other long fields.
+    assert page.evaluate(
+        """() => {
+          const anchor = [...document.querySelectorAll('#toapply-table-body .link-cell a')]
+            .find((item) => item.getAttribute('href') === 'https://de.linkedin.com/jobs/view/123');
+          const cell = anchor.closest('.link-cell');
+          return anchor.scrollWidth > anchor.clientWidth
+            && cell.getBoundingClientRect().right
+               <= document.querySelector('#toapply-table-shell').getBoundingClientRect().right + 1;
+        }"""
+    )
+
+    plain = page.locator("#toapply-table-body tr", has_text="Plain Co").locator(".link-cell")
+    assert plain.locator("a").count() == 0
+    assert plain.inner_text().strip() == "notes: ask Ana for a referral"
+    empty = page.locator("#toapply-table-body tr", has_text="No Link Co").locator(".link-cell")
+    assert empty.inner_text().strip() == "—" and "is-empty" in empty.get_attribute("class")
+
+    # The link opens the posting in its own tab and leaves the drawer shut.
+    page.context.route(
+        "**/jobs/view/123",
+        lambda route: route.fulfill(status=200, content_type="text/html", body="<p>posting</p>"),
+    )
+    with page.context.expect_page() as popup:
+        anchor.click()
+    assert popup.value.url == "https://de.linkedin.com/jobs/view/123"
+    popup.value.close()
+    assert page.locator("#drawer").is_hidden()
+
+    # The row around the link still opens the job.
+    linked.locator("td.role-cell").click()
+    page.wait_for_selector("#drawer.is-open")
+    assert page.locator("#drawer .drawer-title").inner_text().strip() == "Engineer"
+
+
 def test_a_job_closed_while_it_opens_still_closes(page):
     """A close that lands before the drawer's opening frame must win.
 
