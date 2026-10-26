@@ -2866,6 +2866,13 @@ html.is-offline .welcome { display: none; }
   .tab { flex: 1; justify-content: center; }
 }
 
+@media (max-width: 1000px) {
+  /* On a narrower window the company and role columns give a little too, so the
+     table still fits without a sideways scroll. */
+  .company-cell { max-width: 180px; }
+  .role-cell { max-width: 200px; }
+}
+
 @media (max-width: 1100px) {
   /* Source and salary are the least used columns, so they step aside before
      the Match column and the row actions leave the visible area. */
