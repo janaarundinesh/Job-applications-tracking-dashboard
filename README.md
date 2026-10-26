@@ -147,7 +147,7 @@ Files that come out of a job-search tool often carry more than the posting: a ma
 
 ## Documents
 
-Open a job and use the **Documents** section to attach a **resume**, **cover letter**, or any **other** file. You can also drag files straight onto the section: drop one on the **Resume**, **Cover letter** or **Other** button to file it as that type, or drop anywhere in the box to attach several at once — the type is then guessed from the file name (`resume`, `cv`, `cover letter`, otherwise Other). Files are stored under `data/uploads/<job id>/` and listed with their type, size and date. Limit is 10 MB per file; anything larger is skipped with a message. Deleting a job also deletes its files.
+Open a job and use the **Documents** section to attach a **resume**, **cover letter**, or any **other** file. You can also drag files straight onto the section: drop one on the **Resume**, **Cover letter** or **Other** button to file it as that type, or drop anywhere in the box to attach several at once — the type is then guessed from the file name (`resume`, `cv`, `cover letter`, otherwise Other). Files are stored under `data/uploads/<job id>/` and listed with their type, size and date. Limit is 10 MB per file; anything larger is skipped with a message. Deleting a job also deletes its files. If the type you upload is already on the job, the dialog asks what to do with the copy that is there: **Replace** deletes it (and its file) as the new one goes in, **Keep both** attaches the new file alongside it, and **Cancel** drops the upload — the same choice the *From saved files* picker and **Save PDF** offer.
 
 **From saved files** attaches something you already have instead of uploading it again: it lists every file kept with your resumes — the PDFs **Save PDF** made, plus support files — and you pick the type it goes in as (**Resume**, **Cover letter** or **Other**, switchable at the top of the dialog). The job then gets its own copy, so removing the resume or the job later cannot take the other one's file with it. If that type is already on the job, a **Replace** box appears above the list (ticked by default): leaving it ticked swaps the existing file out for the one you pick, unticking it keeps both. When the PDF has just been compiled, skip this section entirely: **Save PDF** can attach it to a job from its own dialog.
 
@@ -313,7 +313,9 @@ DELETE /api/applications/<id>?permanent=1     permanently delete a trashed job +
 POST   /api/applications/<id>/restore         restore a trashed job
 GET    /api/applications?trash=1              list trashed jobs
 DELETE /api/trash                             permanently delete every trashed job and its files
-POST   /api/applications/<id>/documents       upload { filename, kind, content_type, data (base64) }
+POST   /api/applications/<id>/documents       upload { filename, kind, content_type, data (base64) };
+                                              "replace": true removes that job's documents of
+                                              the same kind (and their files) first
 GET    /api/applications/<id>/documents/<doc> download a document
 GET    /api/applications/<id>/documents/<doc>?inline=1  preview a PDF, image or text file inline
 DELETE /api/applications/<id>/documents/<doc> remove a document

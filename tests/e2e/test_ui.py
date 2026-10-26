@@ -1452,6 +1452,57 @@ def test_set_goals_opens_the_goals_panel(page):
     assert page.inner_text("#settings-title") == "Settings"
 
 
+def test_uploading_into_a_taken_slot_offers_to_replace(page):
+    """A second upload into the same slot asks instead of quietly stacking up."""
+    enter_profile(page)
+    created = api_post(
+        page,
+        "/api/applications",
+        {"company": "Airbus", "role": "Simulation Developer", "phase": "to_apply"},
+    )
+    assert created["status"] == 201
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    page.locator("#toapply-table-body tr").first.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+
+    page.set_input_files(
+        '#drawer [data-doc-kind="resume"]',
+        {"name": "cv-v1.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 one"},
+    )
+    page.wait_for_function("() => document.querySelectorAll('#drawer .doc-name').length === 1")
+
+    # The slot is taken, so the next upload asks what to do with the copy there.
+    page.set_input_files(
+        '#drawer [data-doc-kind="resume"]',
+        {"name": "cv-v2.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 two"},
+    )
+    page.wait_for_selector(".replace-ok")
+    assert "Replace the existing resume?" in page.inner_text(".replace-title")
+    assert "cv-v1.pdf" in page.inner_text(".replace-text")
+    page.click(".replace-ok")
+    page.wait_for_function(
+        "() => document.querySelector('#toasts').textContent.includes('Replaced the resume with cv-v2.pdf')"
+    )
+    page.wait_for_function("() => document.querySelectorAll('#drawer .doc-name').length === 1")
+    assert "cv-v2.pdf" in page.inner_text("#drawer")
+
+    # Keep both is still there for a copy that is meant to sit beside the other.
+    page.set_input_files(
+        '#drawer [data-doc-kind="resume"]',
+        {"name": "cv-v3.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 three"},
+    )
+    page.wait_for_selector(".replace-keep")
+    page.click(".replace-keep")
+    page.wait_for_function("() => document.querySelectorAll('#drawer .doc-name').length === 2")
+
+
 def test_job_document_preview_and_download_on_a_locked_profile(page):
     """A preview opened with a bare URL came back "This profile is locked"."""
     enter_profile(page)

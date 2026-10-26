@@ -2,7 +2,7 @@
    ES module, no build step. Open the dashboard through server.py. */
 
 import { $, CLOSED, DEFAULT_GOALS, DOC_LABEL, MAX_UPLOAD, STATUSES, STATUS_LABEL, api, appliedDays, bestStreak, currentStreak, dayDiff, download, fetchFile, isoOf, matchPct, needsReview, parseDateOnly, startOfDay, startOfWeek, state, toast, todayISO, tokenFor } from "./core.js";
-import { chooseSavedFile, confirmAction } from "./dialogs.js";
+import { askReplace, chooseSavedFile, confirmAction } from "./dialogs.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { openUnlock } from "./profiles.js";
 import { render, setTab } from "./workspace.js";
@@ -311,9 +311,15 @@ export async function restoreJob(id) {
 }
 
 
+function docKindWord(kind) {
+  return kind === "resume" ? "resume" : kind === "cover_letter" ? "cover letter" : "file";
+}
+
+
 export async function uploadDocument(appId, kind, file, options) {
   if (!file) return false;
   const quiet = options && options.quiet;
+  const replace = Boolean(options && options.replace);
   if (file.size > MAX_UPLOAD) {
     if (!quiet) toast("Files must be 10 MB or smaller", true);
     throw new Error("Files must be 10 MB or smaller");
@@ -327,10 +333,11 @@ export async function uploadDocument(appId, kind, file, options) {
         filename: file.name,
         content_type: file.type || "application/octet-stream",
         data: data,
+        replace: replace,
       }),
     });
     if (!quiet) {
-      toast("Attached " + file.name);
+      toast(replace ? "Replaced the " + docKindWord(kind) + " with " + file.name : "Attached " + file.name);
       openDrawer(appId);
     }
     return true;
@@ -352,7 +359,17 @@ export async function uploadDocuments(appId, kind, files) {
     hint.textContent =
       "Uploading " + list.length + " file" + (list.length === 1 ? "" : "s") + "…";
   }
+  const app = state.apps.find((item) => item.id === appId) || null;
+  // One kind can only hold one copy when it is replaced, so keep track of the
+  // slots as this batch fills them, not just what the drawer loaded.
+  const occupied = new Map();
+  state.drawerDocuments.forEach((doc) => {
+    const key = doc.kind || "other";
+    if (!occupied.has(key)) occupied.set(key, doc.filename);
+  });
   let done = 0;
+  let replaced = 0;
+  let skipped = 0;
   let tooBig = 0;
   let failed = 0;
   for (const file of list) {
@@ -360,20 +377,48 @@ export async function uploadDocuments(appId, kind, files) {
       tooBig += 1;
       continue;
     }
+    const fileKind = kind || inferDocKind(file.name);
+    let replace = false;
+    if (occupied.has(fileKind)) {
+      const answer = await askReplace({
+        title: "Replace the existing " + docKindWord(fileKind) + "?",
+        text:
+          (app ? app.company : "This job") + " already has " + docKindWord(fileKind) +
+          " (" + occupied.get(fileKind) + "). Replace it with " + file.name +
+          "? Replacing deletes the old file; Keep both attaches this one beside it.",
+      });
+      if (!answer) {
+        skipped += 1;
+        continue;
+      }
+      replace = answer === "replace";
+    }
     try {
-      await uploadDocument(appId, kind || inferDocKind(file.name), file, { quiet: true });
+      await uploadDocument(appId, fileKind, file, { quiet: true, replace: replace });
       done += 1;
+      if (replace) replaced += 1;
+      occupied.set(fileKind, file.name);
     } catch (error) {
       failed += 1;
     }
   }
   if (done) {
-    toast(
-      list.length === 1 && done === 1
-        ? "Attached " + list[0].name
-        : "Attached " + done + " document" + (done === 1 ? "" : "s")
-    );
+    if (done === 1 && list.length === 1) {
+      const single = list[0];
+      toast(
+        replaced
+          ? "Replaced the " + docKindWord(kind || inferDocKind(single.name)) + " with " + single.name
+          : "Attached " + single.name
+      );
+    } else {
+      toast(
+        replaced
+          ? "Attached " + done + " documents, replacing " + replaced
+          : "Attached " + done + " document" + (done === 1 ? "" : "s")
+      );
+    }
   }
+  if (skipped) toast(skipped + " file" + (skipped === 1 ? "" : "s") + " left out", true);
   if (tooBig) toast(tooBig + " file" + (tooBig === 1 ? "" : "s") + " over the 10 MB limit skipped", true);
   if (failed) toast(failed + " file" + (failed === 1 ? "" : "s") + " could not be attached", true);
   if (done && state.drawerId === appId) openDrawer(appId);

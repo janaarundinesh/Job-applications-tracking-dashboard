@@ -1242,6 +1242,19 @@ def save_document(db_path, profile_id, app_id, payload):
         ).fetchone()
         if exists is None:
             raise ApiError(404, "Application not found")
+        # A direct upload can take over a slot that already holds a document; the
+        # previous copy and its file go when the new one is in. Attach has its own
+        # path because it reports which documents it replaced.
+        previous = []
+        if payload.get("replace") is True:
+            previous = conn.execute(
+                "SELECT stored_name FROM documents WHERE application_id = ? AND kind = ?",
+                (app_id, kind),
+            ).fetchall()
+            conn.execute(
+                "DELETE FROM documents WHERE application_id = ? AND kind = ?",
+                (app_id, kind),
+            )
         extension = os.path.splitext(filename)[1].lower().lstrip(".")
         extension = "".join(char for char in extension if char.isalnum())[:10]
         stored_name = uuid.uuid4().hex + (("." + extension) if extension else "")
@@ -1257,6 +1270,11 @@ def save_document(db_path, profile_id, app_id, payload):
             (app_id, kind, filename, stored_name, content_type, len(raw), stamp),
         )
         conn.commit()
+        for old in previous:
+            try:
+                os.remove(os.path.join(folder, old["stored_name"]))
+            except OSError:
+                pass
         row = conn.execute(
             "SELECT * FROM documents WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()

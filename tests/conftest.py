@@ -100,16 +100,18 @@ class ApiClient:
         kind="resume",
         content_type="text/plain",
         headers=None,
+        replace=None,
     ):
+        payload = {
+            "filename": filename,
+            "kind": kind,
+            "content_type": content_type,
+            "data": base64.b64encode(raw).decode("ascii"),
+        }
+        if replace is not None:
+            payload["replace"] = replace
         response = self.post(
-            "/api/applications/%s/documents" % app_id,
-            {
-                "filename": filename,
-                "kind": kind,
-                "content_type": content_type,
-                "data": base64.b64encode(raw).decode("ascii"),
-            },
-            headers=headers,
+            "/api/applications/%s/documents" % app_id, payload, headers=headers
         )
         return response
 

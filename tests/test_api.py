@@ -1247,6 +1247,47 @@ def test_a_saved_file_can_be_attached_to_a_job(api):
     assert api.post("/api/files/424242/attach", {"application_id": job["id"]}).status == 404
 
 
+def test_a_direct_upload_can_replace_the_previous_copy(api):
+    """The Documents section's own upload offers the same replace as attaching."""
+    job = api.create(company="Airbus", role="Simulation Developer")
+    first = api.upload(
+        job["id"], b"%PDF-1.4 one", filename="cv-v1.pdf", content_type="application/pdf"
+    )
+    assert first.status == 201, first.data
+    assert api.upload(job["id"], b"Dear Airbus", filename="cover.txt", kind="cover_letter").status == 201
+
+    # Without replace, uploading again keeps both copies.
+    again = api.upload(
+        job["id"], b"%PDF-1.4 two", filename="cv-v2.pdf", content_type="application/pdf"
+    )
+    assert again.status == 201
+    resumes = [
+        doc
+        for doc in api.get("/api/applications/%d" % job["id"]).data["documents"]
+        if doc["kind"] == "resume"
+    ]
+    assert sorted(doc["filename"] for doc in resumes) == ["cv-v1.pdf", "cv-v2.pdf"]
+
+    replaced = api.upload(
+        job["id"],
+        b"%PDF-1.4 three",
+        filename="cv-v3.pdf",
+        content_type="application/pdf",
+        replace=True,
+    )
+    assert replaced.status == 201, replaced.data
+    documents = api.get("/api/applications/%d" % job["id"]).data["documents"]
+    assert sorted(doc["kind"] for doc in documents) == ["cover_letter", "resume"]
+    resume = next(doc for doc in documents if doc["kind"] == "resume")
+    assert resume["filename"] == "cv-v3.pdf"
+    # The replaced files are gone from disk, not just from the list.
+    for doc in resumes:
+        missing = api.get(
+            "/api/applications/%d/documents/%d" % (job["id"], doc["id"]), token=""
+        )
+        assert missing.status == 404
+
+
 def test_attaching_can_replace_the_previous_copy(api):
     """A new version of the same document replaces the old one when asked."""
     resume = api.post("/api/resumes", {"name": "master_software"}).data

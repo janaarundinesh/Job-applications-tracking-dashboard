@@ -1007,6 +1007,22 @@
   </div>
 </template>
 
+<template id="replace-prompt-template">
+  <div class="modal-backdrop confirm-backdrop picker-backdrop">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Replace the existing document">
+      <div class="modal-body">
+        <h3 class="confirm-title replace-title"></h3>
+        <p class="confirm-text replace-text"></p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost replace-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost replace-keep">Keep both</button>
+        <button type="button" class="btn btn-primary replace-ok">Replace</button>
+      </footer>
+    </div>
+  </div>
+</template>
+
 <template id="confirm-template">
   <div class="modal-backdrop confirm-backdrop">
     <div class="modal modal-sm" role="alertdialog" aria-modal="true">

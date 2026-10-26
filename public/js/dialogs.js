@@ -372,6 +372,27 @@ export function promptName(config) {
 }
 
 
+/* A file is going into a slot that already holds one. Resolves with "replace",
+   "keep" (attach a second copy) or null when the upload is cancelled. */
+export function askReplace(config) {
+  const settings = config || {};
+  const template = $("#replace-prompt-template");
+  if (!template) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const dialog = openDialog(template, resolve);
+    const backdrop = dialog.backdrop;
+    backdrop.querySelector(".replace-title").textContent =
+      settings.title || "Replace the existing document?";
+    backdrop.querySelector(".replace-text").textContent = settings.text || "";
+    backdrop.querySelector(".replace-cancel").addEventListener("click", () => dialog.finish(null));
+    backdrop.querySelector(".replace-keep").addEventListener("click", () => dialog.finish("keep"));
+    backdrop.querySelector(".replace-ok").addEventListener("click", () => dialog.finish("replace"));
+    window.setTimeout(() => backdrop.querySelector(".replace-ok").focus(), 30);
+  });
+}
+
+
 /* Save the compiled PDF and put it where it is going to be used. The name and
    the job sit in one dialog, so the usual trip — save, switch tab, open the job,
    open its Documents, pick the file again — is one step. Resolves with
