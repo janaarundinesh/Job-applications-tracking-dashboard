@@ -1069,30 +1069,26 @@ def test_a_job_closed_while_it_opens_still_closes(page):
     assert page.locator("#drawer").get_attribute("class") == "drawer"
 
 
-def test_resume_editor_uses_the_whole_window(page):
-    """A wide monitor must not leave blank strips down either side of the editor."""
+def test_every_tab_uses_the_whole_window(page):
+    """A wide monitor must not leave blank strips down either side of any tab."""
     page.set_viewport_size({"width": 1650, "height": 900})
     enter_profile(page)
-    page.click('[data-tab="resume"]')
-    page.wait_for_selector("#panel-resume:not([hidden])")
-    assert page.evaluate(
-        """() => {
-          const app = document.querySelector('#resume-app').getBoundingClientRect();
-          return Math.abs(app.left) <= 1 && Math.abs(app.right - window.innerWidth) <= 1;
-        }"""
-    )
-    assert page.evaluate("() => document.documentElement.scrollWidth") == 1650
-
-    # The other tabs keep the centred reading column they are designed for.
-    page.click('[data-tab="applied"]')
-    page.wait_for_timeout(150)
-    left, right = page.evaluate(
-        """() => {
-          const box = document.querySelector('main.page').getBoundingClientRect();
-          return [Math.round(box.left), Math.round(box.right)];
-        }"""
-    )
-    assert left > 0 and right < 1650
+    for tab in ("overview", "to_apply", "applied", "resume", "trash"):
+        page.click('[data-tab="%s"]' % tab)
+        page.wait_for_timeout(200)
+        edges = page.evaluate(
+            """() => {
+              const page = document.querySelector('main.page').getBoundingClientRect();
+              const app = document.querySelector('#panel-resume:not([hidden]) #resume-app');
+              const editor = app ? app.getBoundingClientRect() : page;
+              return [
+                Math.round(page.left), Math.round(page.right),
+                Math.round(editor.left), Math.round(editor.right),
+              ];
+            }"""
+        )
+        assert edges == [0, 1650, 0, 1650], tab
+        assert page.evaluate("() => document.documentElement.scrollWidth") == 1650, tab
 
 
 def test_compile_shows_a_real_pdf_and_falls_back_on_tex_errors(page):

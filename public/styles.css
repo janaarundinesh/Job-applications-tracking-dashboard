@@ -580,10 +580,11 @@ kbd {
 
 /* ---------------- page scaffolding ---------------- */
 
+/* The page fills the window: a centred max-width column left wide monitors
+   with empty strips down either side on every tab. */
 .page {
   position: relative;
   z-index: 1;
-  max-width: 1440px;
   margin: 0 auto;
   padding: 30px 28px 80px;
   display: flex;
@@ -3162,10 +3163,8 @@ html.is-offline .welcome { display: none; }
   animation: none;
 }
 
-/* The editor is a workspace, not a centered page: on a wide monitor the page's
-   1440px column would leave blank strips down either side of it. */
+/* The editor runs edge to edge, inside the page's own padding elsewhere. */
 body.tab-resume .page {
-  max-width: none;
   padding-left: 0;
   padding-right: 0;
 }
