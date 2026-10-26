@@ -745,6 +745,18 @@
           </button>
         </li>
         <li>
+          <button type="button" class="settings-row" data-settings-view="engine">
+            <span class="settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h11l3 3v13H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>
+            </span>
+            <span class="settings-row-text">
+              <span class="settings-row-label">LaTeX engine</span>
+              <span class="settings-row-meta" id="settings-menu-engine">Checking…</span>
+            </span>
+            <svg class="settings-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </li>
+        <li>
           <button type="button" class="settings-row is-danger" data-settings-action="logout">
             <span class="settings-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/></svg>
@@ -834,6 +846,22 @@
           <button type="button" class="btn btn-primary" id="settings-backup-download">Download backup (.zip)</button>
         </div>
         <p class="settings-pin-status" id="settings-backup-note">Contains the database and every uploaded document.</p>
+      </section>
+      <section class="settings-block" data-settings-panel="engine" hidden>
+        <h3 class="settings-heading">LaTeX engine</h3>
+        <p class="settings-pin-status" id="settings-engine-status">Checking…</p>
+        <div class="settings-pin-actions">
+          <button type="button" class="btn btn-primary" id="settings-engine-install" hidden>Install Tectonic</button>
+          <button type="button" class="btn btn-ghost" id="settings-engine-recheck" hidden>Check again</button>
+        </div>
+        <p class="form-error" id="settings-engine-error" hidden></p>
+        <p class="mode-hint">
+          The Resume tab's <strong>Compile</strong> button uses Tectonic, a self-contained LaTeX
+          engine, to build a real PDF. Without one, the editor still renders its own preview and
+          every other part of the tracker works as usual. Installing downloads the official release
+          (about 20 MB) into <code>tools/tectonic/</code> inside this project — no administrator
+          rights, nothing installed system-wide.
+        </p>
       </section>
       <section class="settings-block" data-settings-panel="lock" hidden>
         <h3 class="settings-heading">PIN lock</h3>

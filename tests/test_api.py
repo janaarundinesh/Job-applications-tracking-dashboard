@@ -2,6 +2,7 @@
 
 import base64
 import datetime
+import time
 
 import pytest
 
@@ -977,6 +978,136 @@ def test_compiling_finds_an_uploaded_support_file(api):
     response = api.post("/api/resumes/%d/compile" % resume["id"], {"source": source})
     assert response.status == 200, response.data
     assert base64.b64decode(response.data["pdf"]).startswith(b"%PDF")
+
+
+def test_engine_status_says_what_compile_would_use(api, monkeypatch):
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(server, "latex_engine", lambda: None)
+    response = api.get("/api/engine")
+    assert response.status == 200
+    assert response.data == {
+        "available": False,
+        "version": "",
+        "path": "",
+        "state": "idle",
+        "message": "",
+    }
+
+    monkeypatch.setattr(server, "latex_engine", lambda: "/usr/local/bin/tectonic")
+    monkeypatch.setattr(server, "engine_version", lambda binary: "Tectonic 0.17.0")
+    status = api.get("/api/engine").data
+    assert status["available"] is True
+    assert status["version"] == "Tectonic 0.17.0"
+    assert status["path"] == "/usr/local/bin/tectonic"
+    assert status["state"] == "ready"
+
+    assert api.get("/api/engine/install").status == 405
+    assert api.post("/api/engine", {}).status == 405
+    assert api.get("/api/engine/nonsense").status == 404
+
+
+def wait_for_install(api, seconds=5):
+    status = api.get("/api/engine").data
+    deadline = time.time() + seconds
+    while status["state"] == "installing" and time.time() < deadline:
+        time.sleep(0.02)
+        status = api.get("/api/engine").data
+    return status
+
+
+def test_installing_the_engine_downloads_in_the_background(api, monkeypatch, tmp_path):
+    tools = tmp_path / "tools" / "tectonic"
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tools))
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(server, "engine_version", lambda binary: "Tectonic 9.9.9")
+    calls = []
+
+    def fake_install(**kwargs):
+        calls.append(kwargs)
+        tools.mkdir(parents=True, exist_ok=True)
+        binary = tools / "tectonic"
+        binary.write_bytes(b"#!/bin/sh\n")
+        return str(binary)
+
+    monkeypatch.setattr(server.install_tectonic, "install_engine", fake_install)
+    assert api.get("/api/engine").data["available"] is False
+
+    started = api.post("/api/engine/install", {})
+    assert started.status == 200
+    assert started.data["state"] in ("installing", "ready")
+
+    status = wait_for_install(api)
+    assert status["state"] == "ready", status
+    assert status["available"] is True
+    assert status["version"] == "Tectonic 9.9.9"
+    assert status["path"] == str(tools / "tectonic")
+    assert "Tectonic installed at" in status["message"]
+    # It must land in the folder Compile searches, not the CLI's own default.
+    assert calls == [{"dest_dir": str(tools), "quiet": True}]
+
+    # An engine that is already there is never downloaded a second time.
+    again = api.post("/api/engine/install", {})
+    assert again.data["available"] is True
+    assert calls == [{"dest_dir": str(tools), "quiet": True}]
+
+
+def test_an_install_that_lands_elsewhere_is_not_called_ready(api, monkeypatch, tmp_path):
+    """A successful download the tracker cannot see is a failure, not a success."""
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tmp_path / "tools"))
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(server, "engine_version", lambda binary: "Tectonic 9.9.9")
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    binary = elsewhere / "tectonic"
+    binary.write_bytes(b"#!/bin/sh\n")
+    monkeypatch.setattr(server.install_tectonic, "install_engine", lambda **kwargs: str(binary))
+
+    api.post("/api/engine/install", {})
+    status = wait_for_install(api)
+    assert status["state"] == "failed"
+    assert status["available"] is False
+    assert "cannot find it" in status["message"]
+
+
+def test_a_failed_install_is_reported_rather_than_hidden(api, monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tmp_path / "tools"))
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(
+        server.install_tectonic,
+        "install_engine",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("temporary failure in name resolution")),
+    )
+    assert api.post("/api/engine/install", {}).status == 200
+    status = wait_for_install(api)
+    assert status["state"] == "failed"
+    assert "name resolution" in status["message"]
+    assert status["available"] is False
+
+
+def test_a_downloaded_engine_that_will_not_run_counts_as_a_failure(api, monkeypatch, tmp_path):
+    binary = tmp_path / "tectonic"
+    binary.write_bytes(b"not really an engine")
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tmp_path / "tools"))
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(server, "engine_version", lambda engine: "")
+    monkeypatch.setattr(server.install_tectonic, "install_engine", lambda **kwargs: str(binary))
+    api.post("/api/engine/install", {})
+    status = wait_for_install(api)
+    assert status["state"] == "failed"
+    assert "would not run" in status["message"]
+
+
+@needs_tex
+def test_engine_status_describes_the_engine_that_is_installed(api):
+    status = api.get("/api/engine").data
+    assert status["available"] is True
+    assert status["path"] == TECTONIC
+    assert status["state"] == "ready"
+    assert status["version"]
 
 
 def test_compile_says_when_no_latex_engine_is_installed(api, monkeypatch, tmp_path):

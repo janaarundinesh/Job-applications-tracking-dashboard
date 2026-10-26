@@ -157,7 +157,15 @@ def test_settings_menu_goals_and_backup(page):
     page.wait_for_selector("#settings-menu")
 
     labels = page.locator("#settings-menu .settings-row-label").all_inner_texts()
-    assert labels == ["Profile", "Lock", "Goals", "Reminders", "Backup", "Log out"]
+    assert labels == [
+        "Profile",
+        "Lock",
+        "Goals",
+        "Reminders",
+        "Backup",
+        "LaTeX engine",
+        "Log out",
+    ]
 
     page.click('[data-settings-view="goals"]')
     page.fill("#settings-daily", "7")
@@ -993,3 +1001,53 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     page.wait_for_selector("#preview-backdrop:not([hidden])")
     assert "arun-cv-airbus.pdf" in page.inner_text("#preview-title")
     assert page.get_attribute("#preview-download", "download") == "arun-cv-airbus.pdf"
+
+
+def test_settings_shows_the_engine_and_installs_it_on_one_click(page, monkeypatch, tmp_path):
+    """Settings says whether Compile can build a PDF, and offers to fix it."""
+    import server
+
+    tools = tmp_path / "tools" / "tectonic"
+    monkeypatch.setattr(server, "TECTONIC_DIR", str(tools))
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "ENGINE_INSTALL", {"state": "idle", "message": ""})
+    monkeypatch.setattr(server, "engine_version", lambda binary: "Tectonic 9.9.9")
+
+    enter_profile(page)
+    page.click("#settings-btn")
+    page.wait_for_selector("#settings-backdrop:not([hidden])")
+    page.wait_for_function(
+        "() => /Not installed/.test(document.querySelector('#settings-menu-engine').textContent)"
+    )
+    assert "preview" in page.inner_text("#settings-menu-engine")
+
+    page.click('[data-settings-view="engine"]')
+    page.wait_for_selector('[data-settings-panel="engine"]:not([hidden])')
+    page.wait_for_function(
+        "() => /Not installed/.test(document.querySelector('#settings-engine-status').textContent)"
+    )
+    assert page.locator("#settings-engine-install").is_visible()
+
+    # One click, and the download runs on the server in the background.
+    def fake_install(**kwargs):
+        tools.mkdir(parents=True, exist_ok=True)
+        binary = tools / "tectonic"
+        binary.write_bytes(b"#!/bin/sh\n")
+        return str(binary)
+
+    monkeypatch.setattr(server.install_tectonic, "install_engine", fake_install)
+    page.click("#settings-engine-install")
+    page.wait_for_function(
+        "() => /Ready/.test(document.querySelector('#settings-engine-status').textContent)",
+        timeout=15000,
+    )
+    assert "Tectonic 9.9.9" in page.inner_text("#settings-engine-status")
+    assert page.locator("#settings-engine-install").is_hidden()
+    assert page.locator("#settings-engine-error").is_hidden()
+
+    # The hub row reflects it too, without another round of clicking.
+    page.click("#settings-back")
+    page.wait_for_function(
+        "() => /Available/.test(document.querySelector('#settings-menu-engine').textContent)"
+    )
+    assert "Tectonic 9.9.9" in page.inner_text("#settings-menu-engine")

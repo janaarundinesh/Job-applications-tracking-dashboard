@@ -7,7 +7,7 @@ import { closeModal, confirmEmptyTrash, confirmPurge, confirmTrash, extractFromL
 import { closeDrawer, closePreview, openDrawer, openPreview } from "./drawer.js";
 import { exportCSV, exportJSON, handleImportFile } from "./io.js";
 import { bindResumeEvents, openResumeForJob } from "./resume.js";
-import { closeNewProfile, closeProfiles, closeSettings, closeUnlock, createNewProfile, deleteCurrentProfile, downloadBackup, enterProfile, lockProfile, logoutProfile, openNewProfile, openProfiles, openSettings, removePin, savePin, saveSettings, selectProfile, showSettingsView, showWelcome, submitUnlock } from "./profiles.js";
+import { closeNewProfile, closeProfiles, closeSettings, closeUnlock, createNewProfile, deleteCurrentProfile, downloadBackup, enterProfile, installEngine, lockProfile, logoutProfile, openNewProfile, openProfiles, openSettings, refreshEngineStatus, removePin, savePin, saveSettings, selectProfile, showSettingsView, showWelcome, submitUnlock } from "./profiles.js";
 import { clearFilters, render, renderViewSwitch, renderWorkspace, setTab, syncFilterOptions } from "./workspace.js";
 import { installFocusManagement } from "./a11y.js";
 import { disableReminders, enableReminders, renderReminderSettings } from "./reminders.js";
@@ -326,6 +326,10 @@ export function bindEvents() {
     const row = event.target.closest("[data-settings-view]");
     if (row) showSettingsView(row.dataset.settingsView);
   });
+  $("#settings-engine-install").addEventListener("click", (event) =>
+    installEngine(event.currentTarget)
+  );
+  $("#settings-engine-recheck").addEventListener("click", () => refreshEngineStatus());
   $("#settings-close").addEventListener("click", closeSettings);
   $("#settings-cancel").addEventListener("click", closeSettings);
   $("#settings-form").addEventListener("submit", saveSettings);

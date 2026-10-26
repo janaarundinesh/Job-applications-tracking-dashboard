@@ -9,6 +9,8 @@ Serves a small JSON API backed by SQLite plus the static frontend in ./public.
 
 import argparse
 import base64
+
+import install_tectonic
 import binascii
 import glob
 import hashlib
@@ -1702,6 +1704,94 @@ def latex_engine():
     return shutil.which("tectonic")
 
 
+def engine_version(binary):
+    """What the engine calls itself, e.g. "Tectonic 0.17.0"; "" if it will not run."""
+    try:
+        result = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True, timeout=15
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    lines = (result.stdout or "").strip().splitlines()
+    return lines[0].strip() if lines else ""
+
+
+# The one-click install in Settings. A download runs in a background thread and
+# Settings polls engine_info() for the outcome, so a slow network never holds a
+# request open.
+ENGINE_INSTALL_LOCK = threading.Lock()
+ENGINE_INSTALL = {"state": "idle", "message": ""}
+
+
+def engine_info():
+    """What Settings shows: is Compile able to build a PDF on this machine?"""
+    engine = latex_engine()
+    with ENGINE_INSTALL_LOCK:
+        install = dict(ENGINE_INSTALL)
+    state = install["state"]
+    if state != "installing":
+        # The engine on disk decides, whatever an earlier attempt reported.
+        if engine:
+            state = "ready"
+        elif state == "ready":
+            # Installed, but not where Compile looks: say so instead of claiming
+            # a download that is no longer there.
+            state = "failed"
+            install["message"] = (
+                "Tectonic was installed but the tracker cannot find it at "
+                + TECTONIC_DIR
+            )
+        elif state != "failed":
+            state = "idle"
+    return {
+        "available": bool(engine),
+        "version": engine_version(engine) if engine else "",
+        "path": engine or "",
+        "state": state,
+        "message": install["message"],
+    }
+
+
+def start_engine_install():
+    """Begin fetching Tectonic; repeat calls while it runs are harmless."""
+    if latex_engine():
+        return engine_info()
+    with ENGINE_INSTALL_LOCK:
+        if ENGINE_INSTALL["state"] == "installing":
+            return engine_info()
+        ENGINE_INSTALL["state"] = "installing"
+        ENGINE_INSTALL["message"] = "Downloading Tectonic…"
+    threading.Thread(
+        target=run_engine_install, name="tectonic-install", daemon=True
+    ).start()
+    return engine_info()
+
+
+def run_engine_install():
+    """The download itself, run off the request thread.
+
+    A thread has no caller to raise into, so a failure becomes state + message
+    that Settings shows verbatim — the same text the launcher prints.
+    """
+    try:
+        # Into the folder Compile actually searches, whatever the CLI's default is.
+        binary = install_tectonic.install_engine(dest_dir=TECTONIC_DIR, quiet=True)
+        if not os.path.isfile(binary):
+            raise RuntimeError("the download did not leave an engine behind")
+        version = engine_version(binary)
+        if not version:
+            raise RuntimeError("the downloaded Tectonic would not run")
+        state, message = "ready", "Tectonic installed at " + binary
+    except Exception as error:  # offline, no build for this machine, bad archive
+        state = "failed"
+        message = str(error) or error.__class__.__name__
+    with ENGINE_INSTALL_LOCK:
+        ENGINE_INSTALL["state"] = state
+        ENGINE_INSTALL["message"] = message
+
+
 def tex_error_summary(text, limit=3000):
     """The lines of a TeX log worth showing: what broke, and where."""
     lines = [line.rstrip() for line in str(text or "").splitlines()]
@@ -1800,13 +1890,8 @@ def compile_resume(db_path, profile_id, resume_id, payload):
             )
         with open(pdf_path, "rb") as handle:
             body = handle.read()
-        version = "tectonic"
-        try:
-            version = "tectonic " + subprocess.run(
-                [engine, "--version"], capture_output=True, text=True, timeout=10
-            ).stdout.strip().split()[-1]
-        except (OSError, subprocess.SubprocessError, IndexError):
-            pass
+        reported = engine_version(engine).split()
+        version = "tectonic " + reported[-1] if reported else "tectonic"
         return {
             "pdf": base64.b64encode(body).decode("ascii"),
             "engine": version,
@@ -2591,6 +2676,18 @@ class Handler(BaseHTTPRequestHandler):
                         save_settings(self.db_path, profile_id, self.read_json())
                     )
                 raise ApiError(405, "Method not allowed")
+
+            if parts[0] == "engine":
+                # Machine-wide rather than per profile, but reached from Settings.
+                if len(parts) == 1:
+                    if self.command != "GET":
+                        raise ApiError(405, "Method not allowed")
+                    return self.send_json(engine_info())
+                if len(parts) == 2 and parts[1] == "install":
+                    if self.command != "POST":
+                        raise ApiError(405, "Method not allowed")
+                    return self.send_json(start_engine_install())
+                raise ApiError(404, "Unknown endpoint")
 
             if parts[0] != "applications" and parts[0] != "import":
                 raise ApiError(404, "Unknown endpoint")

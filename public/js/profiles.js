@@ -460,6 +460,101 @@ export async function removePin() {
 }
 
 
+/* ------------------------------------------------------- the LaTeX engine */
+
+const engine = { status: null, timer: null };
+
+
+function engineLabel(info) {
+  if (!info) return "Checking…";
+  if (info.available) return "Available — " + (info.version || "ready");
+  if (info.state === "installing") return "Installing…";
+  return "Not installed — Compile uses the in-app preview";
+}
+
+
+function paintEngine(info) {
+  const meta = $("#settings-menu-engine");
+  if (meta) meta.textContent = engineLabel(info);
+  const status = $("#settings-engine-status");
+  const install = $("#settings-engine-install");
+  const recheck = $("#settings-engine-recheck");
+  const error = $("#settings-engine-error");
+  // Nothing has been asked of the server yet: the row alone says "Checking…".
+  if (!status || !install || !info) return;
+  const installing = info.state === "installing";
+  const failed = info.state === "failed";
+  install.hidden = info.available;
+  install.disabled = installing;
+  install.textContent = installing ? "Installing…" : failed ? "Try again" : "Install Tectonic";
+  if (recheck) recheck.hidden = info.available || installing;
+  if (error) {
+    error.hidden = !failed;
+    error.textContent = failed
+      ? (info.message || "The download did not finish.") +
+        " You can also run python3 install_tectonic.py in the project folder."
+      : "";
+  }
+  if (info.available) {
+    status.textContent =
+      "Ready — Compile builds a real PDF with " +(info.version || "the installed engine") + ".";
+    status.classList.add("is-on");
+  } else if (installing) {
+    status.textContent = "Downloading Tectonic — this takes a moment, and the rest of the tracker stays usable.";
+    status.classList.remove("is-on");
+  } else {
+    status.textContent = failed
+      ? "Not installed. " + (info.message || "")
+      : "Not installed. Compile falls back to the in-app preview.";
+    status.classList.remove("is-on");
+  }
+}
+
+
+export async function refreshEngineStatus(options) {
+  const settings = options || {};
+  try {
+    const info = await api("/api/engine");
+    engine.status = info;
+    paintEngine(info);
+    if (info.state === "installing") {
+      // Poll while the background download runs.
+      window.clearTimeout(engine.timer);
+      engine.timer = window.setTimeout(() => refreshEngineStatus(), 1500);
+    }
+    return info;
+  } catch (error) {
+    if (!settings.quiet) {
+      const status = $("#settings-engine-status");
+      if (status && !$("#settings-backdrop").hidden) status.textContent = error.message;
+    }
+    return null;
+  }
+}
+
+
+export async function installEngine(button) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Starting…";
+  try {
+    const info = await api("/api/engine/install", { method: "POST", body: "{}" });
+    engine.status = info;
+    paintEngine(info);
+    if (info.state === "installing") {
+      window.clearTimeout(engine.timer);
+      engine.timer = window.setTimeout(() => refreshEngineStatus(), 1500);
+    } else if (info.available) {
+      toast("Tectonic is ready — Compile builds a real PDF now");
+    }
+  } catch (error) {
+    toast(error.message, true);
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+
 export function renderSettingsMenu() {
   const profile = activeProfile();
   $("#settings-menu-avatar").textContent = initials(profile ? profile.name : "");
@@ -475,11 +570,12 @@ export function renderSettingsMenu() {
   $("#settings-menu-reminders").textContent = remindersOn()
     ? "On — one summary a day"
     : "Off — no notifications";
+  paintEngine(engine.status);
 }
 
 
 export function showSettingsView(view) {
-  const target = ["profile", "lock", "goals", "reminders", "backup"].includes(view)
+  const target = ["profile", "lock", "goals", "reminders", "backup", "engine"].includes(view)
     ? view
     : "menu";
   const profile = activeProfile();
@@ -491,7 +587,11 @@ export function showSettingsView(view) {
   });
   $("#settings-back").hidden = target === "menu";
   $("#settings-save").hidden =
-    target === "menu" || target === "lock" || target === "backup" || target === "reminders";
+    target === "menu" ||
+    target === "lock" ||
+    target === "backup" ||
+    target === "reminders" ||
+    target === "engine";
   $("#settings-title").textContent = {
     menu: "Settings",
     profile: "Profile",
@@ -499,6 +599,7 @@ export function showSettingsView(view) {
     goals: "Goals",
     reminders: "Reminders",
     backup: "Backup",
+    engine: "LaTeX engine",
   }[target];
   $("#settings-sub").textContent = {
     menu: "Options for this profile.",
@@ -507,7 +608,9 @@ export function showSettingsView(view) {
     goals: "Set the pace you want to keep.",
     reminders: "Nudges about follow-ups and stale applications.",
     backup: "A safety copy of everything the tracker stores.",
+    engine: "What the resume editor compiles with, on this computer.",
   }[target];
+  if (target === "engine") refreshEngineStatus();
   const error = $("#settings-error");
   error.hidden = true;
   error.textContent = "";
@@ -592,6 +695,8 @@ export function openSettings() {
   renderPinSettings();
   renderReminderSettings();
   renderSettingsMenu();
+  // The engine row should be right the first time Settings opens.
+  refreshEngineStatus({ quiet: true });
   $("#settings-delete-profile").hidden = state.profiles.length <= 1;
   $("#settings-backdrop").hidden = false;
   document.body.classList.add("no-scroll");
@@ -602,6 +707,8 @@ export function openSettings() {
 export function closeSettings() {
   $("#settings-backdrop").hidden = true;
   document.body.classList.remove("no-scroll");
+  // Stop polling for an install once nobody is looking at the panel.
+  window.clearTimeout(engine.timer);
 }
 
 
