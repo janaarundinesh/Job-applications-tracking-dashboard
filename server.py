@@ -1614,6 +1614,32 @@ def list_saved_files(db_path, profile_id):
         conn.close()
 
 
+def documents_by_job(db_path, profile_id):
+    """What every job already has attached, keyed by job id.
+
+    The Save PDF dialog lists the jobs it can attach to, and showing each one's
+    existing documents there is the difference between adding a second resume to
+    a job and noticing that only after the fact.
+    """
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT d.id, d.application_id, d.kind, d.filename FROM documents d"
+            " JOIN applications a ON a.id = d.application_id"
+            " WHERE a.profile_id = ?"
+            " ORDER BY d.id ASC",
+            (profile_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(str(row["application_id"]), []).append(
+            {"id": row["id"], "kind": row["kind"], "filename": row["filename"]}
+        )
+    return grouped
+
+
 def find_saved_file(db_path, profile_id, file_id):
     """One library file, with its bytes, scoped to this profile."""
     conn = connect(db_path)
@@ -2643,6 +2669,14 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     raise ApiError(405, "Method not allowed")
                 raise ApiError(404, "Unknown endpoint")
+
+            if parts[0] == "documents":
+                # What each job already has, for the Save PDF dialog.
+                if len(parts) != 1:
+                    raise ApiError(404, "Unknown endpoint")
+                if self.command != "GET":
+                    raise ApiError(405, "Method not allowed")
+                return self.send_json(documents_by_job(self.db_path, profile_id))
 
             if parts[0] == "files":
                 # The library a job's Documents section picks from.

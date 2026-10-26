@@ -2715,6 +2715,15 @@ html.is-welcome .page { display: none; }
 }
 .picker-item-name { font-size: 13px; font-weight: 600; }
 .picker-item-sub { font-size: 11.5px; color: var(--text-faint); }
+.picker-item-docs {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--accent) 66%, var(--text-faint));
+}
+.picker-item-docs.is-empty { font-weight: 400; color: var(--text-faint); }
+.savepdf-note { margin: 10px 0 0; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
 .picker-empty { margin: 8px 0 0; font-size: 13px; color: var(--text-dim); }
 .savepdf-heading { margin: 14px 0 0; }
 

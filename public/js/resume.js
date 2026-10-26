@@ -687,9 +687,18 @@ async function saveCompiledPdf() {
       if (linkedA !== linkedB) return linkedA - linkedB;
       return a.company.localeCompare(b.company);
     });
+  // What each job already has, so the dialog can say whether this is a second
+  // resume for that job. A failure here only costs the summary line.
+  let documents = {};
+  try {
+    documents = await api("/api/documents");
+  } catch (error) {
+    documents = {};
+  }
   const answer = await savePdfDialog({
     filename: suggested,
     jobs: jobs,
+    documents: documents,
     linkedId: linkedId,
     kind: /cover/i.test(doc.name) ? "cover_letter" : "resume",
     text: linkedId

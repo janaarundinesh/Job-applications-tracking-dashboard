@@ -1247,6 +1247,41 @@ def test_a_saved_file_can_be_attached_to_a_job(api):
     assert api.post("/api/files/424242/attach", {"application_id": job["id"]}).status == 404
 
 
+def test_documents_by_job_lists_what_every_job_has(api):
+    """The Save PDF dialog names what a job already holds before attaching."""
+    assert api.get("/api/documents").data == {}
+
+    airbus = api.create(company="Airbus", role="Simulation Developer")
+    marvel = api.create(company="Marvel Fusion", role="Research Software Engineer")
+    api.upload(
+        airbus["id"],
+        b"%PDF-1.4 cv",
+        filename="airbus-cv.pdf",
+        kind="resume",
+        content_type="application/pdf",
+    )
+    api.upload(
+        airbus["id"], b"Dear Airbus", filename="airbus-cover.txt", kind="cover_letter"
+    )
+
+    grouped = api.get("/api/documents").data
+    # Only jobs that hold something are listed, and only the fields the dialog
+    # needs: no stored names, sizes or URLs.
+    assert list(grouped) == [str(airbus["id"])]
+    assert [(entry["kind"], entry["filename"]) for entry in grouped[str(airbus["id"])]] == [
+        ("resume", "airbus-cv.pdf"),
+        ("cover_letter", "airbus-cover.txt"),
+    ]
+    assert all(set(entry) == {"id", "kind", "filename"} for entry in grouped[str(airbus["id"])])
+    assert str(marvel["id"]) not in grouped
+
+    # Per profile, like every other list, and read-only.
+    other = api.post("/api/profiles", {"name": "Second"}).data
+    assert api.get("/api/documents", headers={"X-Profile-Id": str(other["id"])}).data == {}
+    assert api.post("/api/documents", {}).status == 405
+    assert api.get("/api/documents/1").status == 404
+
+
 @needs_tex
 def test_compiling_does_not_save_anything(api):
     """Compile is a preview; saving is a separate, named action."""

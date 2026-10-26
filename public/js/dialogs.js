@@ -1,7 +1,7 @@
 /* Jobby — Add/edit job dialog, link extraction, confirmations.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, api, esc, formatSize, state, statusSelectOptions, toast, todayISO } from "./core.js";
+import { $, $$, DOC_LABEL, api, esc, formatSize, state, statusSelectOptions, toast, todayISO } from "./core.js";
 import { promptRejectDelete, updateLocal } from "./data.js";
 import { closeDrawer, openDrawer } from "./drawer.js";
 import { setPanelNote } from "./io.js";
@@ -358,6 +358,10 @@ export function savePdfDialog(config) {
   if (!template) return Promise.resolve(null);
   const jobs = Array.isArray(settings.jobs) ? settings.jobs : [];
   const linkedId = settings.linkedId == null ? null : settings.linkedId;
+  const documents = settings.documents || {};
+  const docsFor = (job) => documents[String(job.id)] || [];
+  const kindLabel = (value) =>
+    value === "resume" ? "resume" : value === "cover_letter" ? "cover letter" : "file";
 
   return new Promise((resolve) => {
     const dialog = openDialog(template, resolve);
@@ -376,15 +380,45 @@ export function savePdfDialog(config) {
       settings.text ||
       "It is kept with this resume's files. Pick the job it belongs to and it is attached there too.";
 
+    const docSummary = (docs) => {
+      const counts = new Map();
+      docs.forEach((doc) => {
+        const key = doc.kind || "other";
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      return [...counts.entries()]
+        .map(([key, count]) => (DOC_LABEL[key] || "Other") + (count > 1 ? " ×" + count : ""))
+        .join(" · ");
+    };
+
     const rowHtml = (job) => {
       const selected = String(job.id) === String(jobId) ? " is-selected" : "";
       const phase = job.phase === "to_apply" ? "To apply" : "Applied";
+      const docs = docsFor(job);
       return (
         '<li><button type="button" class="picker-item' + selected + '" data-savepdf-job="' + job.id + '">' +
         '<span class="picker-item-name">' + esc(job.company) + "</span>" +
         '<span class="picker-item-sub">' + esc(job.role) + " · " + phase + "</span>" +
-        "</button></li>"
+        '<span class="picker-item-docs' + (docs.length ? "" : " is-empty") + '">' +
+        esc(docs.length ? docSummary(docs) : "No documents yet") +
+        "</span></button></li>"
       );
+    };
+
+    // Attaching never replaces a document, so say plainly when the chosen slot
+    // on this job is already taken.
+    const syncNote = () => {
+      const note = backdrop.querySelector(".savepdf-note");
+      const job = jobs.find((item) => String(item.id) === String(jobId));
+      const existing = job ? docsFor(job).filter((doc) => (doc.kind || "other") === kind) : [];
+      note.hidden = !existing.length;
+      if (!existing.length) return;
+      note.textContent =
+        "Already has " +
+        (existing.length === 1
+          ? "a " + kindLabel(kind) + " (" + existing[0].filename + ")"
+          : existing.length + " " + kindLabel(kind) + "s") +
+        " — attaching adds another one.";
     };
 
     const renderJobs = () => {
@@ -399,6 +433,7 @@ export function savePdfDialog(config) {
       list.innerHTML = matches.map(rowHtml).join("");
       const chosen = jobs.some((job) => String(job.id) === String(jobId));
       okButton.disabled = !chosen;
+      syncNote();
     };
 
     const finishWith = (attach) => {
@@ -418,6 +453,7 @@ export function savePdfDialog(config) {
         backdrop.querySelectorAll("[data-savepdf-kind]").forEach((other) => {
           other.classList.toggle("is-active", other === button);
         });
+        syncNote();
       });
     });
     list.addEventListener("click", (event) => {
@@ -430,6 +466,7 @@ export function savePdfDialog(config) {
         other.classList.toggle("is-selected", other === button);
       });
       okButton.disabled = false;
+      syncNote();
       okButton.focus();
     });
     search.addEventListener("input", renderJobs);

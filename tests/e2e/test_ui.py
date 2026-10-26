@@ -1325,11 +1325,18 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     page.click("#resume-save-pdf")
     page.wait_for_selector(".savepdf-jobs [data-savepdf-job]")
     assert "Airbus Defence and Space" in page.inner_text(".savepdf-jobs")
+    # The row names what the job already holds, so a second copy is a choice.
+    assert "Cover letter" in page.inner_text(".savepdf-jobs")
     # Nothing is attached until a job is chosen.
     assert page.locator(".savepdf-ok").is_disabled()
     page.fill(".savepdf-name", "arun-cv-airbus-tailored")
-    page.click('[data-savepdf-kind="resume"]')
+    page.click('[data-savepdf-kind="cover_letter"]')
     page.click(".savepdf-jobs [data-savepdf-job]")
+    page.wait_for_selector(".savepdf-note:not([hidden])")
+    assert "Already has a cover letter (arun-cv-airbus.pdf)" in page.inner_text(".savepdf-note")
+    # Choosing the free slot says nothing, because nothing is being doubled up.
+    page.click('[data-savepdf-kind="resume"]')
+    assert page.locator(".savepdf-note").is_hidden()
     assert page.locator(".savepdf-ok").is_enabled()
     page.click(".savepdf-ok")
     page.wait_for_function(
