@@ -248,7 +248,7 @@ export function appliedRow(app) {
     '<td class="next-cell">' + nextCell + "</td>" +
     '<td><span class="source-chip' + (app.source ? "" : " is-empty") + '">' +
     esc(app.source || "—") + "</span></td>" +
-    '<td class="salary-cell">' + esc(app.salary || "—") + "</td>" +
+    '<td class="salary-cell"><span>' + esc(app.salary || "—") + "</span></td>" +
     matchCell(app) +
     '<td class="actions-col"><div class="row-actions">' +
     '<button type="button" data-action="edit" data-id="' + app.id + '" title="Edit" aria-label="Edit ' + esc(app.company) + '">' + ICON.pencil + "</button>" +
@@ -277,7 +277,7 @@ export function toApplyRow(app) {
     '<span class="rel">' + esc(relativeDays(app.created_at)) + "</span></td>" +
     '<td><span class="source-chip' + (app.source ? "" : " is-empty") + '">' +
     esc(app.source || "—") + "</span></td>" +
-    '<td class="salary-cell">' + esc(app.salary || "—") + "</td>" +
+    '<td class="salary-cell"><span>' + esc(app.salary || "—") + "</span></td>" +
     matchCell(app) +
     '<td class="next-cell">' + (nextStep
       ? '<span class="step-text">' + esc(nextStep) + "</span>" +

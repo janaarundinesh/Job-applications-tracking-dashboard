@@ -744,3 +744,54 @@ def test_marking_saved_jobs_applied_can_be_undone(page):
     assert page.input_value("#filter-status") == ""
     # The undoing is itself reported, and the undo offer is gone with the toast.
     assert "Undone" in page.locator("#toasts").inner_text()
+
+
+def test_long_values_do_not_push_the_match_column_off_screen(page):
+    """An aggregator source used to stretch the table until Match was out of view."""
+    payload = {
+        "company": "Airbus Defence and Space GmbH",
+        "role": "Junior Simulation Software Developer C/C++ (m/f/d)",
+        "phase": "to_apply",
+        "source": (
+            "Airbus careers (seen via aggregator listings: speedyapply, freehire, "
+            "Glassdoor; LinkedIn/Indeed also list Airbus Manching simulation roles)"
+        ),
+        "salary": "EUR 50,000 - 65,000 / year (LinkedIn estimate for this role level)",
+        "match_pct": 72,
+    }
+    # Imported, so the long source is shortened to the field limit as it arrives.
+    response = api_post(page, "/api/import", {"applications": [payload]})
+    assert response["status"] == 200 and response["body"]["imported"] == 1
+
+    page.reload()
+    page.wait_for_function(
+        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
+    )
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+
+    assert page.inner_text("#toapply-table-body .match-cell") == "72%"
+    assert page.evaluate(
+        """() => {
+          const shell = document.querySelector('#toapply-table-shell');
+          const cell = shell.querySelector('.match-cell');
+          return shell.scrollWidth <= shell.clientWidth + 1
+            && cell.getBoundingClientRect().right <= shell.getBoundingClientRect().right + 1;
+        }"""
+    )
+    # The source is the value that used to stretch it: it is clipped, not wrapped.
+    assert page.evaluate(
+        """() => {
+          const chip = document.querySelector('#toapply-table-body .source-chip');
+          return chip.scrollWidth > chip.clientWidth;
+        }"""
+    )
+    # Salary stays on one line too, so the row height is unchanged.
+    assert page.evaluate(
+        """() => {
+          const cell = document.querySelector('#toapply-table-body .salary-cell span');
+          return cell.getBoundingClientRect().height < 24;
+        }"""
+    )

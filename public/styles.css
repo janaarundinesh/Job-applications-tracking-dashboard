@@ -1124,7 +1124,7 @@ kbd {
   color: var(--text-dim);
 }
 
-.company-cell { max-width: 230px; }
+.company-cell { max-width: 210px; }
 .company-name { color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .company-meta { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1166,7 +1166,7 @@ kbd {
 }
 .match-badge.is-card { margin-left: 0; font-size: 9px; padding: 1px 5px; }
 
-.role-cell { max-width: 250px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-cell { max-width: 230px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date-cell .rel { font-size: 11px; color: var(--text-faint); display: block; }
@@ -1187,10 +1187,17 @@ kbd {
   border-radius: 8px;
   box-shadow: inset 0 1px 0 var(--glass-edge-soft);
   white-space: nowrap;
+  /* Aggregators write long source lines; a capped chip keeps the table narrow
+     enough for the later columns (Match, actions) to stay on screen. */
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 .source-chip.is-empty { border-color: transparent; background: none; color: var(--text-faint); }
 
-.salary-cell { white-space: nowrap; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.salary-cell { color: var(--text-dim); font-variant-numeric: tabular-nums; max-width: 134px; }
+.salary-cell span { display: block; max-width: 134px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .actions-col { width: 74px; text-align: right; }
 
@@ -2859,6 +2866,19 @@ html.is-offline .welcome { display: none; }
   .tab { flex: 1; justify-content: center; }
 }
 
+@media (max-width: 1100px) {
+  /* Source and salary are the least used columns, so they step aside before
+     the Match column and the row actions leave the visible area. */
+  #applied-table-shell .apps-table th:nth-child(7),
+  #applied-table-shell .apps-table td:nth-child(7),
+  #applied-table-shell .apps-table th:nth-child(8),
+  #applied-table-shell .apps-table td:nth-child(8),
+  #toapply-table-shell .apps-table th:nth-child(5),
+  #toapply-table-shell .apps-table td:nth-child(5),
+  #toapply-table-shell .apps-table th:nth-child(6),
+  #toapply-table-shell .apps-table td:nth-child(6) { display: none; }
+}
+
 @media (max-width: 760px) {
   .topbar { padding: 12px 16px; }
   .page { padding: 22px 16px 60px; gap: 26px; }
@@ -2870,12 +2890,6 @@ html.is-offline .welcome { display: none; }
   .field-row { grid-template-columns: 1fr; }
   .kv-grid { grid-template-columns: 1fr; }
   .apps-table td, .apps-table th { padding: 10px 11px; }
-  #applied-table-shell .apps-table th:nth-child(7),
-  #applied-table-shell .apps-table td:nth-child(7),
-  #applied-table-shell .apps-table th:nth-child(8),
-  #applied-table-shell .apps-table td:nth-child(8),
-  #toapply-table-shell .apps-table th:nth-child(6),
-  #toapply-table-shell .apps-table td:nth-child(6) { display: none; }
   .row-actions { opacity: 1; }
   .modal-backdrop { padding: 12px; }
   .drawer {
