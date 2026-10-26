@@ -304,24 +304,26 @@ export function trashRow(app) {
 
 
 /*
- * The job posting link, as its own column: the saved address with the scheme
- * and a leading www. trimmed for reading, the whole saved value in the
- * tooltip. A value that is not a web address (notes people paste by hand)
- * stays plain text rather than becoming a link that goes nowhere.
+ * The job posting link, as its own column: one "Open position" link on every
+ * row whose job has a web address, with the address it opens in the tooltip,
+ * so the column reads the same all the way down instead of showing a wall of
+ * URLs. A value that is not a web address (notes people paste by hand) stays
+ * visible as the text that was saved, dim and unlinked.
  */
 function linkCell(app) {
   const raw = String(app.job_url || "").trim();
   if (!raw) return '<td class="link-cell is-empty">—</td>';
   const href = jobHref(raw);
-  const plain = '<td class="link-cell" title="' + esc(raw) + '">';
   if (!href) {
-    return plain + '<span class="link-plain">' + esc(raw) + "</span></td>";
+    return (
+      '<td class="link-cell" title="' + esc(raw) + '">' +
+      '<span class="link-plain">' + esc(raw) + "</span></td>"
+    );
   }
-  const label = href.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
   return (
-    plain +
-    '<a class="link-value" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' +
-    ' title="' + esc(raw) + '">' + esc(label) + " ↗</a></td>"
+    '<td class="link-cell">' +
+    '<a class="link-open" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' +
+    ' title="' + esc(href) + '">Open position ↗</a></td>'
   );
 }
 

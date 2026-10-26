@@ -888,21 +888,19 @@ def test_the_tables_show_the_job_link_instead_of_the_next_step(page):
 
     linked = page.locator("#toapply-table-body tr", has_text="Linked Co")
     anchor = linked.locator(".link-cell a")
-    # The pasted note after the address is not part of the link.
+    # The cell is a labelled link, not a printed address, and the pasted note
+    # after the address is not part of it.
+    assert anchor.inner_text().strip() == "Open position ↗"
     assert anchor.get_attribute("href") == "https://de.linkedin.com/jobs/view/123"
     assert anchor.get_attribute("target") == "_blank"
-    assert anchor.inner_text().strip() == "de.linkedin.com/jobs/view/123 ↗"
-    assert linked.locator(".link-cell").get_attribute("title").endswith("apply on their site)")
+    assert anchor.get_attribute("title") == "https://de.linkedin.com/jobs/view/123"
+    assert "de.linkedin.com" not in linked.inner_text()
     assert "Send follow-up" not in linked.inner_text()
-    # A long address is clipped to one line, like the other long fields.
+    # A link that long would have stretched the row; the column now fits.
     assert page.evaluate(
         """() => {
-          const anchor = [...document.querySelectorAll('#toapply-table-body .link-cell a')]
-            .find((item) => item.getAttribute('href') === 'https://de.linkedin.com/jobs/view/123');
-          const cell = anchor.closest('.link-cell');
-          return anchor.scrollWidth > anchor.clientWidth
-            && cell.getBoundingClientRect().right
-               <= document.querySelector('#toapply-table-shell').getBoundingClientRect().right + 1;
+          const shell = document.querySelector('#toapply-table-shell');
+          return shell.scrollWidth <= shell.clientWidth + 1;
         }"""
     )
 

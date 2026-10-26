@@ -1185,18 +1185,22 @@ kbd {
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date-cell .rel { font-size: 11px; color: var(--text-faint); display: block; }
 
-.link-col { width: 190px; }
+.link-col { width: 116px; white-space: nowrap; }
 .link-cell { max-width: 190px; }
-.link-cell .link-value,
+.link-cell .link-open {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.link-cell .link-open:hover { text-decoration: underline; }
+/* A saved value that is not an address still shows, clipped to one line. */
 .link-cell .link-plain {
   display: block;
+  color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.link-cell .link-value { color: var(--accent); text-decoration: none; }
-.link-cell .link-value:hover { text-decoration: underline; }
-.link-cell .link-plain { color: var(--text-dim); }
 .link-cell.is-empty { color: var(--text-faint); }
 .next-cell .step-empty { color: var(--text-faint); }
 
