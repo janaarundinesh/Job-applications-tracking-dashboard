@@ -1,7 +1,7 @@
 /* Job Pipeline — The job detail drawer, its documents and the document preview.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fmtDate, formatSize, formatTimestamp, isOverdue, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
+import { $, DOC_LABEL, ICON, MODE_LABEL, STATUS_LABEL, api, daysSince, download, dueLabel, esc, fmtDate, formatSize, formatTimestamp, isOverdue, matchBadge, matchPct, needsReview, relativeDays, state, statusSelectOptions, toast } from "./core.js";
 import { updateLocal } from "./data.js";
 
 
@@ -136,6 +136,7 @@ export function drawerHTML(app, events, documents) {
     (saved
       ? '<span class="status-pill" data-status="saved">Saved to apply</span>'
       : '<span class="status-pill" data-status="' + esc(app.status) + '">' + STATUS_LABEL[app.status] + "</span>") +
+    matchBadge(app) +
     "</div></div>" +
     '<button class="btn btn-icon drawer-close" data-action="close-drawer" aria-label="Close details">' + ICON.close + "</button>" +
     "</header>" +
@@ -169,6 +170,11 @@ export function drawerHTML(app, events, documents) {
       ? detail("Saved on", fmtDate(app.created_at))
       : detail("Applied on", fmtDate(app.applied_on))) +
     (app.reviewed_at ? detail("Last reviewed", fmtDate(app.reviewed_at)) : "") +
+    detail(
+      "Resume match",
+      matchPct(app) === null ? "" : matchPct(app) + "%",
+      matchPct(app) === null ? "" : esc(matchPct(app) + "%") + '<span class="kv-hint">estimated fit with your resume</span>'
+    ) +
     detail("Location type", MODE_LABEL[app.work_mode]) +
     detail("Source", app.source) +
     detail("Salary", app.salary) +

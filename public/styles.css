@@ -1147,6 +1147,25 @@ kbd {
 .review-flag::before { content: ""; width: 4px; height: 4px; border-radius: 99px; background: currentColor; }
 .review-flag.is-card { margin-left: 0; font-size: 9px; padding: 1px 5px; }
 
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: 99px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.match-badge.is-card { margin-left: 0; font-size: 9px; padding: 1px 5px; }
+
 .role-cell { max-width: 250px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1542,6 +1561,7 @@ tr:hover .row-actions, .row-actions:focus-within, .row-actions.is-visible { opac
 .kv dd a { color: var(--accent); text-decoration: none; }
 .kv dd a:hover { text-decoration: underline; }
 .kv dd.is-empty { color: var(--text-faint); }
+.kv-hint { display: block; margin-top: 2px; font-size: 10.5px; color: var(--text-faint); }
 
 .drawer-callout {
   padding: 11px 13px;
@@ -2055,6 +2075,7 @@ tr:hover .row-actions, .row-actions:focus-within, .row-actions.is-visible { opac
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field > span { font-size: 11.5px; font-weight: 500; color: var(--text-dim); }
 .field > span em { color: var(--text-faint); font-style: normal; }
+.field > span.field-hint { font-size: 10.5px; font-weight: 400; color: var(--text-faint); }
 
 .field input,
 .field select,

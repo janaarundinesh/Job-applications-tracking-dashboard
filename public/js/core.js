@@ -264,6 +264,26 @@ export function needsReview(app) {
 }
 
 
+export function matchPct(app) {
+  const value = app ? app.match_pct : null;
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+
+/** The saved estimate of how well this posting matches the resume, if any. */
+export function matchBadge(app, extraClass) {
+  const pct = matchPct(app);
+  if (pct === null) return "";
+  return (
+    '<span class="match-badge' + (extraClass ? " " + extraClass : "") +
+    '" title="Estimated match with your resume">' + pct + "% match</span>"
+  );
+}
+
+
 export function formatSize(bytes) {
   if (!bytes) return "0 KB";
   if (bytes < 1024) return bytes + " B";

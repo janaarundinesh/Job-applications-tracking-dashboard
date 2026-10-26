@@ -23,7 +23,7 @@ export function exportCSV() {
   }
   const columns = [
     "id", "phase", "company", "role", "status", "applied_on", "work_mode", "location", "source",
-    "salary", "contact_name", "contact_email", "job_url", "next_step", "next_step_on", "description", "notes", "reviewed_at",
+    "salary", "match_pct", "contact_name", "contact_email", "job_url", "next_step", "next_step_on", "description", "notes", "reviewed_at",
   ];
   const cell = (value) => '"' + String(value == null ? "" : value).replace(/"/g, '""') + '"';
   const rows = [columns.join(",")];
@@ -52,8 +52,15 @@ export const HEADER_ALIASES = {
   next_step: ["next_step", "next_action", "next"],
   next_step_on: ["next_step_on", "next_step_date", "follow_up", "follow_up_date", "followup_date", "reminder"],
   description: ["description", "job_description", "jd", "role_description"],
+  match_pct: [
+    "match_pct", "match", "match_percentage", "match_score", "estimated_match_pct", "estimated_match",
+    "resume_match", "resume_match_pct", "fit_pct", "match_pct_estimate",
+  ],
   notes: ["notes", "note", "comments", "details", "personal_notes"],
 };
+
+// Analysis some files carry beside a posting; the server folds these into notes.
+export const NOTE_ALIASES = ["why_it_matches", "important_missing_requirements", "missing_requirements", "gaps"];
 
 
 export function normalizeHeader(value) {
@@ -172,13 +179,28 @@ export function normalizeDate(value) {
 }
 
 
+export function normalizeMatchPct(value) {
+  const text = String(value == null ? "" : value).replace(/%/g, "").trim();
+  const found = text.match(/\d+(?:\.\d+)?/);
+  if (!found) return "";
+  const number = Math.round(Number(found[0]));
+  if (!Number.isFinite(number)) return "";
+  return String(Math.max(0, Math.min(100, number)));
+}
+
+
 export function cleanImportedRow(row) {
   const cleaned = {};
   Object.keys(row).forEach((key) => {
     let value = row[key];
     if (value == null) return;
+    if (Array.isArray(value)) value = value.join("\n- ");
     value = String(value).trim();
     if (!value) return;
+    if (key === "match_pct") {
+      value = normalizeMatchPct(value);
+      if (!value) return;
+    }
     if (key === "status") value = normalizeStatusValue(value);
     if (key === "phase") {
       value = normalizePhaseValue(value);
@@ -262,8 +284,11 @@ export async function handleImportFile(file, options) {
     if (status) status("Importing " + parsed.rows.length + " job(s)…", "ok");
     const result = await importRows(parsed.rows);
     const skipped = parsed.skipped + result.skipped;
+    // A row that names no status was never applied to; the server saves it to apply.
+    const savedToApply = parsed.rows.filter((row) => !row.phase && !row.status).length;
     const summary =
       "Imported " + result.imported + " job(s)" +
+      (savedToApply ? " — " + savedToApply + " saved to apply" : "") +
       (skipped ? ", skipped " + skipped + " row(s) missing company or role" : "") + ".";
     toast(summary);
     if (status) status(summary, "ok");

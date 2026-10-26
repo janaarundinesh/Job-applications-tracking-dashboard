@@ -280,6 +280,96 @@ def test_import_json(api):
     assert listed[0]["phase"] == "to_apply"
 
 
+def test_import_without_a_status_saves_to_apply(api):
+    """A file of postings is a to-apply list, not a list of sent applications."""
+    response = api.post(
+        "/api/import",
+        {
+            "applications": [
+                {
+                    "rank": 1,
+                    "company": "Airbus Defence and Space GmbH",
+                    "role": "Junior Simulation Software Developer C/C++ (m/f/d)",
+                    "source": "Airbus careers (seen via aggregator listings)",
+                    "location": "Manching, Bavaria, Germany",
+                    "salary": "Not stated",
+                    "description": "Develop C/C++ simulation models for the A400M programme.",
+                    "employment_type": "Full-time, permanent, junior grade",
+                    "application_deadline": "Not stated",
+                    "job_url": "https://example.com/jobs/airbus-simulation",
+                    "estimated_match_pct": 72,
+                    "why_it_matches": "Junior C/C++ simulation role; thesis in C++17.",
+                    "important_missing_requirements": "No avionics or real-time C experience.",
+                }
+            ]
+        },
+    )
+    assert response.data == {"imported": 1, "skipped": 0}
+
+    job = api.get("/api/applications").data[0]
+    assert job["phase"] == "to_apply"
+    assert job["status"] == "applied"
+    assert job["applied_on"] == ""
+    assert job["match_pct"] == 72
+    assert job["notes"] == (
+        "Why it matches:\nJunior C/C++ simulation role; thesis in C++17.\n\n"
+        "Important missing requirements:\nNo avionics or real-time C experience."
+    )
+    # Everything else about the posting is kept as before.
+    assert job["description"].startswith("Develop C/C++ simulation models")
+    assert job["location"] == "Manching, Bavaria, Germany"
+
+
+def test_import_keeps_rows_that_name_a_stage_applied(api):
+    api.post(
+        "/api/import",
+        {
+            "applications": [
+                {"company": "Sent", "role": "Engineer", "status": "Rejected"},
+                {"company": "Mixed case", "role": "Designer", "phase": "To apply"},
+                {"company": "No estimate", "role": "Analyst", "match_pct": "not a number"},
+                {
+                    "company": "Own notes",
+                    "role": "Tester",
+                    "notes": "Referred by Priya",
+                    "why_it_matches": ["C++", "Python"],
+                },
+            ]
+        },
+    )
+    jobs = {app["company"]: app for app in api.get("/api/applications").data}
+
+    # A named stage means it was sent, so it stays an application.
+    assert jobs["Sent"]["phase"] == "applied"
+    assert jobs["Sent"]["status"] == "rejected"
+    assert jobs["Mixed case"]["phase"] == "to_apply"
+    # An unreadable estimate is dropped rather than failing the row.
+    assert jobs["No estimate"]["match_pct"] is None
+    assert jobs["No estimate"]["phase"] == "to_apply"
+    # Notes the file wrote are kept, with the analysis appended under a heading.
+    assert jobs["Own notes"]["notes"] == "Referred by Priya\n\nWhy it matches:\n- C++\n- Python"
+
+
+def test_match_pct_is_validated_and_can_be_cleared(api):
+    created = api.post(
+        "/api/applications", {"company": "Acme", "role": "Engineer", "match_pct": "72%"}
+    )
+    assert created.status == 201
+    assert created.data["match_pct"] == 72
+    path = "/api/applications/%d" % created.data["id"]
+
+    # A job with no estimate reports none rather than zero.
+    assert api.create(company="No estimate")["match_pct"] is None
+
+    for bad in (120, -1, "most", True):
+        assert api.patch(path, {"match_pct": bad}).status == 400
+    assert api.patch(path, {"match_pct": 120}).data["error"]
+    # The dashboard sends "" for an empty field, which clears the estimate.
+    assert api.get(path).data["application"]["match_pct"] == 72
+    assert api.patch(path, {"match_pct": ""}).data["match_pct"] is None
+    assert api.patch(path, {"match_pct": 0}).data["match_pct"] == 0
+
+
 def test_extract_requires_url(api):
     assert api.post("/api/extract", {}).status == 400
     assert api.post("/api/extract", {"url": "   "}).status == 400

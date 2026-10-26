@@ -93,15 +93,19 @@ Click **Add job** (or press `N`). There are three ways in:
 
 ### CSV format
 
-Header names are matched loosely (`position`/`title` → role, `date applied` → applied_on, `company name` → company, `job description` → description, and so on). Only `company` and `role` are required.
+Header names are matched loosely (`position`/`title` → role, `date applied` → applied_on, `company name` → company, `job description` → description, `estimated match pct` → match_pct, and so on). Only `company` and `role` are required.
 
 ```csv
-Company,Role,Phase,Status,Applied On,Location,Work Mode,Source,Salary,Job URL,Next Step,Next Step Date,Contact,Email,Description,Notes
-"Acme, Inc.",Senior Frontend Engineer,Applied,Applied,2026-10-20,Berlin,Hybrid,Referral,€90–110k,https://acme.com/jobs/1,Send follow-up,2026-10-27,Marta Klein,marta@acme.com,"Own our design system","Referred by Priya"
-"Globex",Staff Engineer,To apply,,2026-10-24,Remote,Remote,Company site,€120k,https://globex.com/jobs/2,Tailor resume,2026-10-26,,,,"Met at a meetup"
+Company,Role,Phase,Status,Applied On,Location,Work Mode,Source,Salary,Match %,Job URL,Next Step,Next Step Date,Contact,Email,Description,Notes
+"Acme, Inc.",Senior Frontend Engineer,Applied,Applied,2026-10-20,Berlin,Hybrid,Referral,€90–110k,84,https://acme.com/jobs/1,Send follow-up,2026-10-27,Marta Klein,marta@acme.com,"Own our design system","Referred by Priya"
+"Globex",Staff Engineer,To apply,,2026-10-24,Remote,Remote,Company site,€120k,65,https://globex.com/jobs/2,Tailor resume,2026-10-26,,,,"Met at a meetup"
 ```
 
-`Phase` accepts `Applied` or `To apply` (also saved / wishlist / backlog / not applied). Status values are normalized (`phone screen` → screening, `offer` → offer, `rejected`/`declined` → rejected, and so on), as are work modes and dates (`YYYY-MM-DD`, `MM/DD/YYYY`, `DD/MM/YYYY` when the first number is over 12). JSON accepts either an array of objects or `{ "applications": [...] }` with the same field aliases.
+`Phase` accepts `Applied` or `To apply` (also saved / wishlist / backlog / not applied). Status values are normalized (`phone screen` → screening, `offer` → offer, `rejected`/`declined` → rejected, and so on), as are work modes and dates (`YYYY-MM-DD`, `MM/DD/YYYY`, `DD/MM/YYYY` when the first number is over 12). A match estimate (`72`, `"72%"`) is stored as a whole number from 0 to 100. JSON accepts either an array of objects or `{ "applications": [...] }` with the same field aliases.
+
+A row that names **no status and no phase was never sent**, so it is imported as *Saved — not applied yet* and appears under **To apply** with today's date left empty. Add a `status` or `phase` column when the file really does describe applications you made; a named stage (even `Rejected`) keeps the row in Applied.
+
+Files that come out of a job-search tool often carry more than the posting: a match estimate, a note on why the role fits, and the requirements the posting asks for that your resume does not cover. Two of those are kept rather than dropped — `estimated_match_pct` becomes the job's **Resume match**, and `why_it_matches` / `important_missing_requirements` are written into the job's **notes** under those headings, which the detail drawer and the search box already read. Rename them if your file spells them differently: `match`, `match_percentage`, `match_score` and `resume_match` also count as the match, and `missing_requirements` or `gaps` as the gaps. Anything else the file carries (`rank`, `employment_type`, `application_deadline`, …) is ignored.
 
 ## Documents
 
@@ -119,7 +123,8 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 - **Streak** — the next panel counts consecutive days with at least one application. It keeps counting from yesterday until you send something today, so a streak is only broken once a full day passes with nothing sent. The last seven days are shown as dots and the longest run ever is listed as your best. The flame is drawn in flame orange with a warm halo and flickers gently all the time, burning brighter and a little faster once a streak is alive; both animations stop when your system asks for reduced motion.
 - **Rejecting a job** — moving any application to the Rejected stage (from the table, the board, the detail drawer or the edit form) immediately asks whether to delete it. **Delete job and files** removes the application, its notes, timeline and every attached resume, cover letter and other document from the database and disk; **Cancel** keeps it in the Applied tab as rejected. Marking a posting "No longer open" from the review panel does not ask, since that is already a confirmation step.
 - **Needs review** — once an application reaches 30 days in an active stage (Applied, Screening, Interview), it is automatically flagged: a **Review** badge appears in the table and on its board card, and it is listed in the **Needs review** panel on the Overview. Open it and choose **Still open** to record the check, or **No longer open** to close it as rejected. A reviewed job becomes due again after another 30 days, so long-running processes get checked monthly. Rejected, withdrawn and offered jobs, and jobs in To apply, are never flagged.
-- **Export** — every job as JSON or CSV, including phase, description and notes.
+- **Export** — every job as JSON or CSV, including phase, description, notes and the resume match.
+- **Resume match** — a job can carry an estimate of how well the posting fits your resume, as a whole number from 0 to 100. It arrives with an import (`estimated_match_pct`), or you type it into **Resume match %** when adding or editing a job. It shows as a `72% match` chip beside the company in the Applied and To apply lists, on the board cards, and in the detail drawer's **Resume match** row; an empty field means no estimate, and the number is never invented or recomputed.
 - **Reminders** — **Settings → Reminders → Turn on notifications** asks the browser for permission once. After that, at most one notification per profile per day summarises what is due ("2 follow-ups due · 1 job to review") when you open the dashboard; it never fires twice for the same day, and nothing leaves your machine. Where a page is not allowed to raise a notification (installed windows and mobile browsers), the service worker posts it instead and clicking it brings the dashboard forward.
 - Keyboard: `N` new job, `/` search, `Esc` close dialog/drawer, `Enter` opens the focused row, `Tab`/`Shift+Tab` stay inside an open dialog, arrow keys move between tabs.
 - Screen readers: dialogs are labelled, the page behind an open dialog is `inert`, focus returns to the button that opened it, and toasts are announced politely.
@@ -173,7 +178,7 @@ python3 -m pytest -q                    # API suite
 RUN_E2E=1 python3 -m pytest tests/e2e   # browser suite (needs Playwright)
 ```
 
-The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
+The **API suite** covers creating and validating jobs, stage changes and their timeline events, review marks, the trash flow (soft delete, restore, permanent delete, empty trash), document upload/download/inline preview with byte ranges and content-type safety, goal settings, JSON import, profiles — creating and updating them, keeping jobs, trash, documents and goals isolated per profile, deleting a profile only from inside itself, the PIN lock (hashing, wrong PINs, unlock tokens, locking again, refusing locked data without a token), importing (the to-apply default, the notes a file folds in, the match estimate and its validation) — and the local-only guards (foreign `Origin`, missing token, foreign `Host`), plus the daily backup snapshot, its pruning and the backup zip.
 
 The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen with a working **Check again**.
 
@@ -229,7 +234,8 @@ requirements-dev.txt  pytest and Playwright, only needed for running the tests
 GET    /api/applications                      list all jobs
 GET    /api/applications/<id>                 one job + status events + documents
 POST   /api/applications                      create
-PATCH  /api/applications/<id>                 partial update (phase, status, description, …);
+PATCH  /api/applications/<id>                 partial update (phase, status, description, match_pct, …);
+                                              match_pct is 0–100, "" clears it
                                               { "mark_reviewed": true } records a review
 DELETE /api/applications/<id>                 move job to trash (soft delete)
 DELETE /api/applications/<id>?permanent=1     permanently delete a trashed job + files

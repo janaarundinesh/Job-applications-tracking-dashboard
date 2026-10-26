@@ -5,6 +5,7 @@ environment variable the suite is skipped so the pre-commit hook stays fast.
 """
 
 import datetime
+import json
 
 
 def enter_profile(page):
@@ -63,6 +64,83 @@ def test_add_application_shows_up_in_the_table(page):
     assert page.locator('#drawer [data-doc-drop]').count() >= 1
     page.click("#drawer .drawer-close")
     page.wait_for_selector("#drawer", state="hidden")
+
+
+def test_importing_postings_without_a_status_saves_them_to_apply(page):
+    """A file of postings is a to-apply list; the analysis it carries is kept."""
+    payload = json.dumps(
+        [
+            {
+                "rank": 1,
+                "company": "Airbus Defence and Space GmbH",
+                "role": "Junior Simulation Software Developer C/C++",
+                "location": "Manching, Bavaria, Germany",
+                "estimated_match_pct": 72,
+                "why_it_matches": "Junior C/C++ simulation role; thesis in C++17.",
+                "important_missing_requirements": "No avionics or real-time C experience.",
+            }
+        ]
+    ).encode("utf-8")
+
+    enter_profile(page)
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.click('[data-mode="file"]')
+    page.set_input_files(
+        "#modal-import-file",
+        {"name": "jobs.json", "mimeType": "application/json", "buffer": payload},
+    )
+    page.wait_for_selector("#modal-backdrop", state="hidden")
+
+    # Nothing was sent, so the job lands under To apply with its match estimate.
+    assert page.locator("#count-toapply").inner_text() == "1"
+    assert page.locator("#count-applied").inner_text() == "0"
+    page.click('[data-tab="to_apply"]')
+    page.wait_for_selector("#toapply-table-body tr")
+    row = page.locator("#toapply-table-body tr").first
+    assert "Airbus" in row.inner_text()
+    assert "72% match" in row.inner_text().lower()
+
+    row.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+    page.wait_for_selector("#drawer .doc-list")
+    detail = page.locator("#drawer").inner_text()
+    assert "Resume match" in detail
+    assert "72%" in detail
+    notes = page.input_value("#drawer-notes")
+    assert "Why it matches:\nJunior C/C++ simulation role" in notes
+    assert "Important missing requirements:\nNo avionics or real-time C experience." in notes
+
+    # The match estimate is editable from the form.
+    page.click('#drawer [data-action="edit"]')
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    assert page.input_value('input[name="match_pct"]') == "72"
+    page.click("#modal-cancel")
+    page.wait_for_selector("#modal-backdrop", state="hidden")
+    page.click("#drawer .drawer-close")
+    page.wait_for_selector("#drawer", state="hidden")
+
+    # CSV files get the same treatment through their own column names.
+    csv = (
+        'Company,Position,Estimated Match Pct,Why It Matches\n'
+        'Globex,Staff Engineer,65 %,"Remote-friendly, four-day week"\n'
+    )
+    page.click("#new-btn")
+    page.wait_for_selector("#modal-backdrop:not([hidden])")
+    page.click('[data-mode="file"]')
+    page.set_input_files(
+        "#modal-import-file",
+        {"name": "jobs.csv", "mimeType": "text/csv", "buffer": csv.encode("utf-8")},
+    )
+    page.wait_for_selector("#modal-backdrop", state="hidden")
+    assert page.locator("#count-toapply").inner_text() == "2"
+    assert page.locator("#count-applied").inner_text() == "0"
+    globex = page.locator("#toapply-table-body tr", has_text="Globex")
+    assert "65% match" in globex.inner_text().lower()
+    globex.click()
+    page.wait_for_selector("#drawer:not([hidden])")
+    page.wait_for_selector("#drawer-notes")
+    assert "Why it matches:\nRemote-friendly, four-day week" in page.input_value("#drawer-notes")
 
 
 def test_settings_menu_goals_and_backup(page):

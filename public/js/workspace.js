@@ -1,7 +1,7 @@
 /* Job Pipeline — The Applied / To apply / Trash workspace: table, board and filters.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
+import { $, $$, ICON, MODE_LABEL, STATUSES, STATUS_LABEL, TABS, daysSince, dueLabel, emptyState, esc, fmtDate, fmtShortDate, isOverdue, matchBadge, needsReview, parseDateOnly, relativeDays, state, statusSelectOptions } from "./core.js";
 import { appsIn, renderProfileChrome, updateBulkBar, visibleApps } from "./data.js";
 import { renderOverview } from "./overview.js";
 
@@ -220,6 +220,7 @@ export function appliedRow(app) {
     '<td class="company-cell">' +
     '<div class="company-name">' + esc(app.company) +
     (review ? '<span class="review-flag" title="Applied ' + daysSince(app.applied_on) + ' days ago — check whether this role is still open">Review</span>' : "") +
+    matchBadge(app) +
     "</div>" +
     (meta ? '<div class="company-meta">' + esc(meta) + "</div>" : "") +
     "</td>" +
@@ -252,7 +253,7 @@ export function toApplyRow(app) {
     (state.selection.has(app.id) ? " checked" : "") +
     ' aria-label="Select ' + esc(app.company) + " " + esc(app.role) + '" /></td>' +
     '<td class="company-cell">' +
-    '<div class="company-name">' + esc(app.company) + "</div>" +
+    '<div class="company-name">' + esc(app.company) + matchBadge(app) + "</div>" +
     (meta ? '<div class="company-meta">' + esc(meta) + "</div>" : "") +
     "</td>" +
     '<td class="role-cell" title="' + esc(app.role) + '">' + esc(app.role) + "</td>" +
@@ -355,7 +356,7 @@ export function boardCard(app) {
     '<article class="app-card" draggable="true" tabindex="0" data-app-id="' + app.id + '">' +
     '<button type="button" class="card-delete" data-action="delete" data-id="' + app.id + '" title="Move to trash" aria-label="Delete ' + esc(app.company) + '">' + ICON.trash + "</button>" +
     '<div class="card-role">' + esc(app.role) + "</div>" +
-    '<div class="card-company">' + esc(app.company) + "</div>" +
+    '<div class="card-company">' + esc(app.company) + matchBadge(app, "is-card") + "</div>" +
     '<div class="card-foot">' +
     '<span>' + esc(fmtShortDate(parseDateOnly(app.applied_on) || new Date())) + "</span>" +
     (review ? '<span class="review-flag is-card" title="Applied ' + daysSince(app.applied_on) + ' days ago">Review</span>' : "") +

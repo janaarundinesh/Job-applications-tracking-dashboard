@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS applications (
     next_step     TEXT NOT NULL DEFAULT '',
     next_step_on  TEXT,
     notes         TEXT NOT NULL DEFAULT '',
+    match_pct     INTEGER,
     reviewed_at   TEXT,
     deleted_at    TEXT,
     created_at    TEXT NOT NULL,
@@ -313,6 +314,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE applications ADD COLUMN deleted_at TEXT")
     if "reviewed_at" not in columns:
         conn.execute("ALTER TABLE applications ADD COLUMN reviewed_at TEXT")
+    if "match_pct" not in columns:
+        conn.execute("ALTER TABLE applications ADD COLUMN match_pct INTEGER")
     if "profile_id" not in columns:
         conn.execute(
             "ALTER TABLE applications ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1"
@@ -707,6 +710,39 @@ def _phase(payload, default=None):
     return raw.strip()
 
 
+def _match_pct(payload):
+    """The saved resume-match estimate: 0-100, or None when the field is empty."""
+    if "match_pct" not in payload:
+        return None
+    raw = payload["match_pct"]
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float, str)) and not isinstance(raw, bool):
+        text = str(raw).strip().rstrip("%").strip()
+        if not text:
+            return None
+        try:
+            value = int(round(float(text)))
+        except ValueError:
+            value = None
+        if value is not None and 0 <= value <= 100:
+            return value
+    raise ApiError(400, "Match percentage must be a whole number from 0 to 100")
+
+
+def tolerant_match_pct(raw):
+    """Read a match estimate out of a file, ignoring anything unreadable."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        return None
+    text = str(raw).strip().rstrip("%").strip()
+    if not text:
+        return None
+    found = re.search(r"\d+(?:\.\d+)?", text)
+    if not found:
+        return None
+    return max(0, min(100, int(round(float(found.group(0))))))
+
+
 def clean_create(payload):
     if not isinstance(payload, dict):
         raise ApiError(400, "Expected a JSON object")
@@ -732,6 +768,7 @@ def clean_create(payload):
         "work_mode": _work_mode(payload, "onsite"),
         "applied_on": applied_on,
         "next_step_on": _date(payload, "next_step_on"),
+        "match_pct": _match_pct(payload),
     }
     for key, limit in TEXT_LIMITS.items():
         if key in ("company", "role"):
@@ -763,6 +800,8 @@ def clean_patch(payload):
         data["next_step_on"] = _date(payload, "next_step_on")
     if payload.get("mark_reviewed") is True:
         data["reviewed_at"] = now_iso()
+    if "match_pct" in payload:
+        data["match_pct"] = _match_pct(payload)
     return data
 
 
@@ -1191,6 +1230,79 @@ def delete_document(db_path, profile_id, app_id, doc_id):
         pass
 
 
+# Analysis a file may carry next to a posting; folded into the notes the app shows.
+IMPORT_NOTE_SECTIONS = (
+    ("why_it_matches", "Why it matches"),
+    ("important_missing_requirements", "Important missing requirements"),
+    ("missing_requirements", "Important missing requirements"),
+    ("gaps", "Important missing requirements"),
+)
+
+
+def _flat_text(value):
+    """A file's value as text: lists become bullet lines, numbers become digits."""
+    if isinstance(value, bool) or value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return "\n".join(
+            "- " + _flat_text(item) for item in value if _flat_text(item)
+        )
+    if isinstance(value, dict):
+        return "\n".join(
+            "- %s: %s" % (key, _flat_text(item))
+            for key, item in value.items()
+            if _flat_text(item)
+        )
+    return str(value).strip()
+
+
+def _has_text(row, key):
+    return bool(_flat_text(row.get(key)))
+
+
+def prepare_import_row(item):
+    """Fill in what an exported file leaves out.
+
+    A row that names neither a phase nor a stage was never sent anywhere: it is
+    a posting worth applying to, so it lands in *To apply* rather than appearing
+    as an application you already made. Any analysis and match estimate the file
+    carries is kept, with the written analysis folded into the notes.
+    """
+    if not isinstance(item, dict):
+        return item
+    row = dict(item)
+    # Files write "To apply" or "Rejected" where the API wants an exact value.
+    for key in ("phase", "status", "work_mode"):
+        if isinstance(row.get(key), str):
+            row[key] = re.sub(r"[\s-]+", "_", row[key].strip().lower())
+    if not _has_text(row, "phase") and not _has_text(row, "status"):
+        row["phase"] = "to_apply"
+    if not _has_text(row, "match_pct"):
+        for key in ("estimated_match_pct", "match_percentage", "resume_match_pct", "match"):
+            if _has_text(row, key):
+                row["match_pct"] = row[key]
+                break
+    row["match_pct"] = tolerant_match_pct(row.get("match_pct"))
+
+    blocks = []
+    for key in ("notes", "personal_notes"):
+        text = _flat_text(row.get(key))
+        if text:
+            blocks.append(text)
+            break
+    seen = set()
+    for key, label in IMPORT_NOTE_SECTIONS:
+        text = _flat_text(row.get(key))
+        if not text or label in seen:
+            continue
+        seen.add(label)
+        blocks.append(label + ":\n" + text)
+    row["notes"] = "\n\n".join(blocks)[: TEXT_LIMITS["notes"]]
+    return row
+
+
 def import_applications(db_path, profile_id, items):
     if not isinstance(items, list):
         raise ApiError(400, "Import expects a JSON array of applications")
@@ -1201,7 +1313,7 @@ def import_applications(db_path, profile_id, items):
     try:
         for item in items:
             try:
-                data = clean_create(item)
+                data = clean_create(prepare_import_row(item))
             except ApiError:
                 skipped += 1
                 continue

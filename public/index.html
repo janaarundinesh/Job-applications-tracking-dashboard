@@ -365,7 +365,7 @@
           <strong>Choose a CSV or JSON file</strong>
           <span>or drag and drop it here</span>
         </label>
-        <p class="mode-hint">CSV headers like <code>company</code>, <code>role</code>, <code>status</code>, <code>phase</code>, <code>applied_on</code>, <code>source</code>, <code>location</code>, <code>salary</code>, <code>description</code> are recognised. Existing jobs are kept; rows are appended.</p>
+        <p class="mode-hint">CSV headers like <code>company</code>, <code>role</code>, <code>status</code>, <code>phase</code>, <code>applied_on</code>, <code>source</code>, <code>location</code>, <code>salary</code>, <code>description</code> are recognised, and <code>estimated_match_pct</code> becomes the resume match. A row that names no status or phase is saved to apply, not marked as applied. <code>why_it_matches</code> and <code>important_missing_requirements</code> are kept in the notes. Existing jobs are kept; rows are appended.</p>
         <div class="mode-note" id="import-status" hidden></div>
       </div>
 
@@ -411,6 +411,11 @@
               <option value="remote">Remote</option>
               <option value="hybrid">Hybrid</option>
             </select>
+          </label>
+          <label class="field">
+            <span>Resume match %</span>
+            <input type="number" name="match_pct" min="0" max="100" step="1" placeholder="e.g. 72" />
+            <span class="field-hint">How well this posting fits your resume</span>
           </label>
         </div>
 
