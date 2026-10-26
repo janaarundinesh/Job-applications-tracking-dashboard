@@ -80,7 +80,7 @@ The service worker caches the shell — `index.html`, `styles.css`, the ES modul
 - **To apply** — jobs you have saved but not sent yet. Also a table, with a one-click **Mark as applied** action on every row (or in the detail drawer). Saved jobs are excluded from pipeline stats, follow-up reminders and the board until you send them.
 - **Applied** — everything you have actually sent. Table view (search, filter, sort, inline stage changes) and board view (drag cards between Applied → Screening → Interview → Offer, plus Rejected/Withdrawn).
 - **Bulk actions** — in either table, tick the checkbox on several jobs (or the header checkbox to select everything currently shown) and a bar appears with **Delete** and **Clear**. On saved jobs it also offers **Mark as applied**, which sends them to the Applied tab with today's date; on applied jobs it offers **Change stage… → Set stage**, which moves the whole selection to Screening, Interview, Offer, Rejected or Withdrawn at once. Delete asks once, then moves the selection to Trash, where it can still be restored. Moving the stage or marking saved jobs as applied offers **Undo** in the message for a few seconds, which puts every job back where it was. The selection clears when you change tabs.
-- **Resume** — a LaTeX editor with the source on the left, the rendered page on the right and your resume files in the rail. See [Resume editor](#resume-editor).
+- **LaTeX Editor** — the resume editor: source on the left, the rendered page on the right and your resume files in the rail. See [Resume editor](#resume-editor).
 - **Trash** — deleted jobs wait here. Restore one, or delete it permanently when you are sure.
 
 Click any row or card to open the detail drawer: stage, dates, salary, source, contact, job description, documents, personal notes, and the full stage timeline.
@@ -159,7 +159,7 @@ Click a document name to preview it without leaving the dashboard: PDFs render i
 
 ## Resume editor
 
-The **Resume** tab is a three-pane editor laid out like Overleaf: a rail of resume files, the LaTeX source with line numbers, and the rendered page. It is per profile, so each person keeps their own. Like every tab, it runs the full width of the window — the dashboard has no centred column — so a wide monitor has no blank strips beside it and the source and preview get the space.
+The **LaTeX Editor** tab (formerly *Resume*) is a three-pane editor laid out like Overleaf: a rail of resume files, the LaTeX source with line numbers, and the rendered page. It is per profile, so each person keeps their own. Like every tab, it runs the full width of the window — the dashboard has no centred column — so a wide monitor has no blank strips beside it and the source and preview get the space.
 
 - **Source** — the editor is a plain textarea over the `.tex` file, so what you see is exactly what Overleaf will compile. `Tab` inserts two spaces, `Ctrl`/`Cmd`+`S` saves immediately, and everything else saves itself about a second after you stop typing (the header shows *Saved 14:32*). Tabs across the top switch between open resumes.
 - **Preview** — rendered in the browser as you type; no TeX installation, and it works on Windows. It understands the commands resumes actually use: `\section` / `\subsection` with optional `*`, `itemize` and `enumerate`, `\textbf`, `\textit`, `\emph`, `\underline`, `\texttt`, `\textsc`, `\href`, `\url`, `\hfill` right-aligned dates (the `Company … 2021 – 2024` line), `\begin{center}`, simple `tabular`, sizes such as `{\Large Name}`, `\textcolor`, `\definecolor`-free colours, dashes and quotes. Unknown macros are dropped but their arguments are kept, so a custom `\cvsection{…}` still shows its text. **Compile** re-renders on demand and reports how long it took, and the strip under the editor names unbalanced braces or an environment that is never closed (with the line), instead of quietly producing a broken page.
@@ -332,7 +332,7 @@ GET    /api/resumes/<id>                       one resume with its source and fi
 PATCH  /api/resumes/<id>                       { "source", "name", "label" }
 DELETE /api/resumes/<id>                       remove the resume and its files
 POST   /api/resumes/<id>/files                 upload { filename, content_type, data (base64) } —
-                                              this is also how the Resume tab's Save PDF keeps a
+                                              this is also how the LaTeX Editor's Save PDF keeps a
                                               compiled PDF under the name you choose
 GET    /api/resumes/<id>/files/<file>          open a support file (images inline)
 DELETE /api/resumes/<id>/files/<file>          remove a support file

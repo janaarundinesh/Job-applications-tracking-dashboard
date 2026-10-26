@@ -821,7 +821,7 @@ def test_applied_list_selects_all_and_bulk_deletes(page):
     assert labels[0].startswith("Overview")
     assert labels[1].startswith("To apply")
     assert labels[2].startswith("Applied")
-    assert labels[3] == "Resume"
+    assert labels[3] == "LaTeX Editor"
     assert labels[4].startswith("Trash")
 
     page.click('[data-tab="applied"]')
