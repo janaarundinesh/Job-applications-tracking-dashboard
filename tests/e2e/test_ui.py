@@ -1177,7 +1177,8 @@ def open_resume_in_editor(page, resume_id, name):
 
 
 def test_saving_the_pdf_and_attaching_it_from_the_job(page):
-    """Compile, name the PDF, then pick it from the job's Documents section."""
+    """Compile, name the PDF, then get it onto a job — from the save dialog or
+    later from the job's Documents section."""
     source = (
         "\\documentclass{article}\n"
         "\\begin{document}\n"
@@ -1225,10 +1226,10 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     assert page.locator(".resume-assets-list li").count() == 0
 
     page.click("#resume-save-pdf")
-    page.wait_for_selector(".prompt-input")
-    assert page.input_value(".prompt-input") == "master_cv.pdf"
-    page.fill(".prompt-input", "arun-cv-airbus")
-    page.click(".prompt-ok")
+    page.wait_for_selector(".savepdf-name")
+    assert page.input_value(".savepdf-name") == "master_cv.pdf"
+    page.fill(".savepdf-name", "arun-cv-airbus")
+    page.click(".savepdf-only")
     page.wait_for_function(
         "() => document.querySelector('#resume-assets').textContent.includes('arun-cv-airbus.pdf')"
     )
@@ -1265,6 +1266,28 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     )
     assert page.get_attribute("#preview-download", "href").startswith("blob:")
     assert page.get_attribute("#preview-open", "href").startswith("blob:")
+
+    # Save PDF can also put the file on a job in the same dialog: choosing the
+    # job there replaces the tab switch, the second picker and the drawer trip.
+    page.click("#preview-close")
+    page.click(".drawer-close")
+    page.wait_for_selector("#drawer", state="hidden")
+    page.click('[data-tab="resume"]')
+    page.wait_for_selector("#resume-save-pdf:not([disabled])")
+    page.click("#resume-save-pdf")
+    page.wait_for_selector(".savepdf-jobs [data-savepdf-job]")
+    assert "Airbus Defence and Space" in page.inner_text(".savepdf-jobs")
+    # Nothing is attached until a job is chosen.
+    assert page.locator(".savepdf-ok").is_disabled()
+    page.fill(".savepdf-name", "arun-cv-airbus-tailored")
+    page.click('[data-savepdf-kind="resume"]')
+    page.click(".savepdf-jobs [data-savepdf-job]")
+    assert page.locator(".savepdf-ok").is_enabled()
+    page.click(".savepdf-ok")
+    page.wait_for_function(
+        "() => document.querySelector('#toasts').textContent.includes('arun-cv-airbus-tailored.pdf')"
+    )
+    assert "attached it to Airbus Defence and Space as Resume" in page.inner_text("#toasts")
 
 
 def test_settings_shows_the_engine_and_installs_it_on_one_click(page, monkeypatch, tmp_path):

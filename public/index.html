@@ -963,6 +963,39 @@
   </div>
 </template>
 
+<template id="save-pdf-template">
+  <div class="modal-backdrop confirm-backdrop picker-backdrop">
+    <form class="modal modal-sm" role="dialog" aria-modal="true" aria-label="Save the compiled PDF">
+      <div class="modal-body">
+        <h3 class="confirm-title">Save the compiled PDF</h3>
+        <p class="confirm-text savepdf-text"></p>
+        <label class="prompt-field">
+          <span class="prompt-label">File name</span>
+          <input class="prompt-input savepdf-name" type="text" spellcheck="false" autocomplete="off" />
+        </label>
+        <p class="prompt-label savepdf-heading">Attach as</p>
+        <div class="picker-kinds" role="group" aria-label="Attach as">
+          <button type="button" class="picker-kind is-active" data-savepdf-kind="resume">Resume</button>
+          <button type="button" class="picker-kind" data-savepdf-kind="cover_letter">Cover letter</button>
+          <button type="button" class="picker-kind" data-savepdf-kind="other">Other</button>
+        </div>
+        <p class="prompt-label savepdf-heading">Attach to a job</p>
+        <label class="search picker-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <input type="search" class="savepdf-search" placeholder="Search your jobs…" autocomplete="off" />
+        </label>
+        <ul class="picker-list savepdf-jobs"></ul>
+        <p class="picker-empty savepdf-empty" hidden></p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost savepdf-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost savepdf-only">Just save</button>
+        <button type="submit" class="btn btn-primary savepdf-ok" disabled>Save &amp; attach</button>
+      </footer>
+    </form>
+  </div>
+</template>
+
 <template id="confirm-template">
   <div class="modal-backdrop confirm-backdrop">
     <div class="modal modal-sm" role="alertdialog" aria-modal="true">

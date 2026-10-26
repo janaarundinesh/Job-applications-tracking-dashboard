@@ -2,9 +2,9 @@
    a rendered page on the right, and the profile's resumes in the rail.
    ES module, no build step. Open the dashboard through server.py. */
 
-import { $, $$, MAX_UPLOAD, api, esc, fetchFile, fmtDate, formatSize, state, toast } from "./core.js";
-import { openPreview } from "./drawer.js";
-import { promptName } from "./dialogs.js";
+import { $, $$, DOC_LABEL, MAX_UPLOAD, api, esc, fetchFile, fmtDate, formatSize, state, toast } from "./core.js";
+import { openDrawer, openPreview } from "./drawer.js";
+import { savePdfDialog } from "./dialogs.js";
 
 
 const rs = {
@@ -676,18 +676,32 @@ async function saveCompiledPdf() {
     return;
   }
   const suggested = doc.name.replace(/\.tex$/i, "") + ".pdf";
-  const answer = await promptName({
-    title: "Save the compiled PDF",
-    text:
-      "It is kept with this resume's files, so you can attach it to any job from the job's Documents section.",
-    label: "File name",
-    value: suggested,
+  // A resume made for a job opens with that job already chosen, so the common
+  // case is: compile, Save & attach, done.
+  const linkedId = doc.application_id == null ? null : doc.application_id;
+  const jobs = (state.apps || [])
+    .slice()
+    .sort((a, b) => {
+      const linkedA = String(a.id) === String(linkedId) ? 0 : 1;
+      const linkedB = String(b.id) === String(linkedId) ? 0 : 1;
+      if (linkedA !== linkedB) return linkedA - linkedB;
+      return a.company.localeCompare(b.company);
+    });
+  const answer = await savePdfDialog({
+    filename: suggested,
+    jobs: jobs,
+    linkedId: linkedId,
+    kind: /cover/i.test(doc.name) ? "cover_letter" : "resume",
+    text: linkedId
+      ? "It is kept with this resume's files and attached to the job this resume was written for."
+      : "It is kept with this resume's files. Pick the job it belongs to and it is attached there in the same step.",
   });
   if (!answer) return;
-  const filename = /\.pdf$/i.test(answer) ? answer : answer + ".pdf";
+  const filename = /\.pdf$/i.test(answer.name) ? answer.name : answer.name + ".pdf";
+  let saved;
   try {
     const data = await readFileBase64(pdf.blob);
-    const saved = await api("/api/resumes/" + doc.id + "/files", {
+    saved = await api("/api/resumes/" + doc.id + "/files", {
       method: "POST",
       body: JSON.stringify({
         filename: filename,
@@ -697,9 +711,27 @@ async function saveCompiledPdf() {
     });
     doc.files = (doc.files || []).concat(saved);
     renderAssets();
-    toast("Saved " + saved.filename + " with this resume");
   } catch (error) {
     toast(error.message, true);
+    return;
+  }
+  if (!answer.jobId) {
+    toast("Saved " + saved.filename + " with this resume");
+    return;
+  }
+  const job = jobs.find((item) => String(item.id) === String(answer.jobId));
+  try {
+    await api("/api/files/" + saved.id + "/attach", {
+      method: "POST",
+      body: JSON.stringify({ application_id: answer.jobId, kind: answer.kind }),
+    });
+    toast(
+      "Saved " + saved.filename + " and attached it to " + (job ? job.company : "the job") +
+      " as " + (DOC_LABEL[answer.kind] || "a file")
+    );
+    if (String(state.drawerId) === String(answer.jobId)) openDrawer(answer.jobId);
+  } catch (error) {
+    toast("Saved " + saved.filename + ", but could not attach it: " + error.message, true);
   }
 }
 

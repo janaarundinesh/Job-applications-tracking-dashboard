@@ -348,6 +348,115 @@ export function promptName(config) {
 }
 
 
+/* Save the compiled PDF and put it where it is going to be used. The name and
+   the job sit in one dialog, so the usual trip — save, switch tab, open the job,
+   open its Documents, pick the file again — is one step. Resolves with
+   { name, kind, jobId } (jobId null when the file is only saved), or null. */
+export function savePdfDialog(config) {
+  const settings = config || {};
+  const template = $("#save-pdf-template");
+  if (!template) return Promise.resolve(null);
+  const jobs = Array.isArray(settings.jobs) ? settings.jobs : [];
+  const linkedId = settings.linkedId == null ? null : settings.linkedId;
+
+  return new Promise((resolve) => {
+    const dialog = openDialog(template, resolve);
+    const backdrop = dialog.backdrop;
+    const form = backdrop.querySelector("form");
+    const nameField = backdrop.querySelector(".savepdf-name");
+    const search = backdrop.querySelector(".savepdf-search");
+    const list = backdrop.querySelector(".savepdf-jobs");
+    const empty = backdrop.querySelector(".savepdf-empty");
+    const okButton = backdrop.querySelector(".savepdf-ok");
+    let kind = settings.kind || "resume";
+    let jobId = linkedId;
+
+    nameField.value = settings.filename || "";
+    backdrop.querySelector(".savepdf-text").textContent =
+      settings.text ||
+      "It is kept with this resume's files. Pick the job it belongs to and it is attached there too.";
+
+    const rowHtml = (job) => {
+      const selected = String(job.id) === String(jobId) ? " is-selected" : "";
+      const phase = job.phase === "to_apply" ? "To apply" : "Applied";
+      return (
+        '<li><button type="button" class="picker-item' + selected + '" data-savepdf-job="' + job.id + '">' +
+        '<span class="picker-item-name">' + esc(job.company) + "</span>" +
+        '<span class="picker-item-sub">' + esc(job.role) + " · " + phase + "</span>" +
+        "</button></li>"
+      );
+    };
+
+    const renderJobs = () => {
+      const query = search.value.trim().toLowerCase();
+      const matches = jobs.filter(
+        (job) => !query || (job.company + " " + job.role).toLowerCase().includes(query)
+      );
+      empty.textContent = jobs.length
+        ? "No job matches that search."
+        : "No jobs yet — save the file here and attach it later from a job's Documents section.";
+      empty.hidden = Boolean(matches.length);
+      list.innerHTML = matches.map(rowHtml).join("");
+      const chosen = jobs.some((job) => String(job.id) === String(jobId));
+      okButton.disabled = !chosen;
+    };
+
+    const finishWith = (attach) => {
+      const value = nameField.value.trim();
+      if (!value) {
+        nameField.focus();
+        return;
+      }
+      dialog.finish({ name: value, kind: kind, jobId: attach ? jobId : null });
+    };
+
+    backdrop.querySelectorAll("[data-savepdf-kind]").forEach((button) => {
+      const active = button.dataset.savepdfKind === kind;
+      button.classList.toggle("is-active", active);
+      button.addEventListener("click", () => {
+        kind = button.dataset.savepdfKind;
+        backdrop.querySelectorAll("[data-savepdf-kind]").forEach((other) => {
+          other.classList.toggle("is-active", other === button);
+        });
+      });
+    });
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-savepdf-job]");
+      if (!button) return;
+      const job = jobs.find((item) => String(item.id) === button.dataset.savepdfJob);
+      if (!job) return;
+      jobId = job.id;
+      backdrop.querySelectorAll("[data-savepdf-job]").forEach((other) => {
+        other.classList.toggle("is-selected", other === button);
+      });
+      okButton.disabled = false;
+      okButton.focus();
+    });
+    search.addEventListener("input", renderJobs);
+    search.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const first = list.querySelector("[data-savepdf-job]");
+      if (first) first.click();
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      finishWith(true);
+    });
+    backdrop.querySelector(".savepdf-cancel").addEventListener("click", () => dialog.finish(null));
+    backdrop.querySelector(".savepdf-only").addEventListener("click", () => finishWith(false));
+
+    renderJobs();
+    window.setTimeout(() => {
+      nameField.focus();
+      const dot = nameField.value.lastIndexOf(".");
+      if (dot > 0) nameField.setSelectionRange(0, dot);
+      else nameField.select();
+    }, 30);
+  });
+}
+
+
 export function confirmAction(config) {
   const template = $("#confirm-template");
   const fragment = template.content.cloneNode(true);
