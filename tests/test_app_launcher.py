@@ -111,6 +111,8 @@ def test_opening_the_app_starts_the_server_and_opens_the_dashboard(project):
     assert wait_for(stubs / "python.log", "server.py")
     # The optional engine install runs first, as it does in the launchers.
     assert started.index("install_tectonic.py") < started.index("server.py")
+    # Started from the icon, the server stops once the dashboard is gone.
+    assert "--exit-when-idle" in started
     assert wait_for(stubs / "open.log", "http://127.0.0.1:8787")
     # Nothing to report when the start goes to plan.
     assert read(stubs / "alert.log") == ""

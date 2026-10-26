@@ -6,7 +6,7 @@ No accounts, no build step, no Python dependencies. Python 3.8+ standard library
 
 ## Run it
 
-On macOS, double-click **Jobby.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window, and the server keeps running after the icon is done, logging to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
+On macOS, double-click **Jobby.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window. The server outlives the icon — the dashboard needs it — and stops itself two minutes after the dashboard stops asking, so closing the window is what closes the server and nothing is left running behind you. It logs to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
 
 The launchers are the same thing with a visible console: **Start Jobby.command** on macOS, **Start Jobby.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
 
@@ -27,6 +27,7 @@ Options:
 | `--host` | `127.0.0.1` | Bind address (keep it on loopback for local-only use) |
 | `--db` | `data/tracker.db` | SQLite database file |
 | `--open` | off | Open the dashboard in your default browser |
+| `--exit-when-idle` | off | Stop once no request has arrived for `SECONDS`; the app passes `120` |
 
 Stop it with `Ctrl+C`. Your data stays in `data/tracker.db` and `data/uploads/`.
 
@@ -45,11 +46,12 @@ Opening `public/index.html` from Finder works too: if the server is already runn
 
 ## If the server stops
 
-Every screen is served by that one Python process, so the dashboard is only as alive as it is. Three things keep that visible and fixable:
+Every screen is served by that one Python process, so the dashboard is only as alive as it is. Four things keep that visible and fixable:
 
 - **The pill in the topbar** answers *is the server still there?* It reads `GET /api/health` every 20 seconds, turns red the moment a request cannot reach the server (no waiting for the next check), and turns green again as soon as one gets through. Its tooltip names the address it is watching.
 - **Retry**, which appears on the pill while it is red, checks there and then and keeps the checking on a short backoff — 2 seconds at first, growing to 20 — until the server answers. After an outage long enough to notice, coming back offers **Reload** in a message, for a page whose lists may be stale.
 - **The launcher** on macOS (`Jobby.app`, which starts the server when it is not running) and the `.command` / `.bat`, which restart a server that died under them (see [Run it](#run-it)).
+- **Closing the dashboard**, which stops the server the app started: it goes two minutes after the last request it answered, since a dashboard asks for `/api/health` every 20 seconds. A server started in a terminal keeps running until `Ctrl+C` instead.
 
 A page in a browser cannot start a process on your computer, and that is the limit to know about. The Retry button only ever checks. *Starting* the server happens in a launcher: open **Jobby.app** again, double-click **Start Jobby.command** / **.bat**, or run `python3 server.py`.
 

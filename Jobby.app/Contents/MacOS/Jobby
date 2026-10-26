@@ -66,9 +66,11 @@ fi
 # tools/tectonic, and carry on (in-app preview) if that is not possible.
 "$PYTHON" install_tectonic.py --quiet >>"$LOG" 2>&1
 
-# Start the server without a window. It outlives this app on purpose: the
-# dashboard in the browser needs it to keep running after the icon is done.
-nohup "$PYTHON" server.py --port "$PORT" </dev/null >>"$LOG" 2>&1 &
+# Start the server without a window. It has to outlive this app, because the
+# dashboard in the browser needs it after the icon is done — so it stops itself
+# instead, once nothing has asked it for anything for two minutes: closing the
+# dashboard is what closes the server.
+nohup "$PYTHON" server.py --port "$PORT" --exit-when-idle 120 </dev/null >>"$LOG" 2>&1 &
 
 # Wait for it to answer. A cold start still has to open the database, run the
 # schema and (the first time) fetch the LaTeX engine.

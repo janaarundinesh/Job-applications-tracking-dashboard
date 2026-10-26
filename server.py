@@ -2217,6 +2217,8 @@ class Handler(BaseHTTPRequestHandler):
     db_path = DEFAULT_DB
     # Host names to accept besides loopback (only when --host binds elsewhere).
     allowed_hosts = frozenset()
+    # When the last request arrived. --exit-when-idle watches this.
+    last_seen = time.monotonic()
 
     def log_message(self, fmt, *args):
         sys.stderr.write(
@@ -2380,6 +2382,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- routing ---------------------------------------------------------
     def route(self):
+        Handler.last_seen = time.monotonic()
         parsed = urlparse(self.path)
         path = parsed.path
         self._body_read = False
@@ -2827,12 +2830,36 @@ class Handler(BaseHTTPRequestHandler):
         self.route()
 
 
+def watch_idle(server, idle_seconds, interval=None, clock=time.monotonic, sleep=time.sleep, report=print):
+    """Stop the server once nothing has asked it for anything for a while.
+
+    An open dashboard asks for /api/health every 20 seconds, so a quiet server
+    means no window is left. Only the app starts the server this way: one started
+    in a terminal stays up until Ctrl+C.
+    """
+    if interval is None:
+        interval = min(5.0, max(0.5, idle_seconds / 4.0))
+    while True:
+        sleep(interval)
+        if clock() - Handler.last_seen > idle_seconds:
+            report("\nNo dashboard has asked for anything for %g seconds - stopping." % idle_seconds)
+            server.shutdown()
+            return
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Jobby — your job applications tracking buddy")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--db", default=DEFAULT_DB, help="Path to the SQLite database")
     parser.add_argument("--open", action="store_true", help="Open the dashboard in a browser")
+    parser.add_argument(
+        "--exit-when-idle",
+        type=float,
+        default=0,
+        metavar="SECONDS",
+        help="stop once no request has arrived for this many seconds",
+    )
     args = parser.parse_args(argv)
 
     init_db(args.db)
@@ -2847,6 +2874,11 @@ def main(argv=None):
     print("Running at %s" % url)
     print("Database: %s" % os.path.abspath(args.db))
     print("Press Ctrl+C to stop")
+    if args.exit_when_idle > 0:
+        print("Stops on its own after %g seconds with no request" % args.exit_when_idle)
+        threading.Thread(
+            target=watch_idle, args=(server, args.exit_when_idle), daemon=True
+        ).start()
     if args.open:
         import webbrowser
 
