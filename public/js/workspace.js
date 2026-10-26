@@ -304,11 +304,12 @@ export function trashRow(app) {
 
 
 /*
- * The job posting link, as its own column: one "Open position" link on every
- * row whose job has a web address, with the address it opens in the tooltip,
- * so the column reads the same all the way down instead of showing a wall of
- * URLs. A value that is not a web address (notes people paste by hand) stays
- * visible as the text that was saved, dim and unlinked.
+ * The job posting link, as its own column: a small icon button on every row
+ * whose job has a web address, with where it goes in the tooltip, so the column
+ * stays narrow instead of printing an address or repeated words on every row.
+ * The label is on the link itself, so it still reads for a screen reader. A
+ * value that is not a web address (notes people paste by hand) stays visible as
+ * the text that was saved, dim and unlinked.
  */
 function linkCell(app) {
   const raw = String(app.job_url || "").trim();
@@ -320,10 +321,13 @@ function linkCell(app) {
       '<span class="link-plain">' + esc(raw) + "</span></td>"
     );
   }
+  const label = "Open the " + app.company + " posting in a new tab";
   return (
     '<td class="link-cell">' +
     '<a class="link-open" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' +
-    ' title="' + esc(href) + '">Open position ↗</a></td>'
+    ' title="Open position — ' + esc(href) + '"' +
+    ' aria-label="' + esc(label) + '">' +
+    ICON.external + "</a></td>"
   );
 }
 

@@ -61,6 +61,7 @@ export const ICON = {
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h8l4 4v14H6V3z"/><path d="M14 3v4h4"/></svg>',
   attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 12.5V8a4 4 0 118 0v8a6 6 0 11-12 0v-6"/></svg>',
   flame: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3c3 3.4 5 6.2 5 9a5 5 0 01-10 0c0-1.9.8-3.4 1.8-4.6.2 1.8 1.2 2.6 1.2 2.6S10.5 6.6 12 3z"/></svg>',
+  external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5.5a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-13a.5.5 0 01.5-.5H10"/></svg>',
 };
 
 

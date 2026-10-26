@@ -1185,17 +1185,23 @@ kbd {
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date-cell .rel { font-size: 11px; color: var(--text-faint); display: block; }
 
-.link-col { width: 116px; white-space: nowrap; }
-.link-cell { max-width: 190px; }
+/* As narrow as the header allows: the visible cell is one small icon. */
+.link-col { width: 64px; white-space: nowrap; }
 .link-cell .link-open {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
+  border-radius: 6px;
 }
-.link-cell .link-open:hover { text-decoration: underline; }
-/* A saved value that is not an address still shows, clipped to one line. */
+.link-cell .link-open svg { width: 15px; height: 15px; }
+.link-cell .link-open:hover { color: var(--text); background: var(--surface-hover); }
+/* A saved value that is not an address still shows, clipped to one line and
+   bounded, so one hand-pasted note cannot widen the icon column. */
 .link-cell .link-plain {
   display: block;
+  max-width: 120px;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
