@@ -1794,6 +1794,20 @@ def _has_text(row, key):
     return bool(_flat_text(row.get(key)))
 
 
+def _clamp_import_text(row):
+    """Shorten a field the app would reject instead of losing the whole posting."""
+    for key, limit in TEXT_LIMITS.items():
+        value = row.get(key)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if len(value) > limit:
+            row[key] = value[: limit - 1].rstrip() + "\u2026"
+        else:
+            row[key] = value
+    return row
+
+
 def prepare_import_row(item):
     """Fill in what an exported file leaves out.
 
@@ -1801,10 +1815,14 @@ def prepare_import_row(item):
     a posting worth applying to, so it lands in *To apply* rather than appearing
     as an application you already made. Any analysis and match estimate the file
     carries is kept, with the written analysis folded into the notes.
+
+    Long text is shortened rather than rejected: an aggregator listing often
+    carries a source or URL past the app's limit, and dropping the posting
+    because of it would silently lose a job the file did list.
     """
     if not isinstance(item, dict):
         return item
-    row = dict(item)
+    row = _clamp_import_text(dict(item))
     # Files write "To apply" or "Rejected" where the API wants an exact value.
     for key in ("phase", "status", "work_mode"):
         if isinstance(row.get(key), str):
@@ -1841,13 +1859,22 @@ def import_applications(db_path, profile_id, items):
     stamp = now_iso()
     imported = 0
     skipped = 0
+    problems = []
     conn = connect(db_path)
     try:
-        for item in items:
+        for index, item in enumerate(items):
             try:
                 data = clean_create(prepare_import_row(item))
-            except ApiError:
+            except ApiError as error:
                 skipped += 1
+                company = item.get("company") if isinstance(item, dict) else None
+                problems.append(
+                    {
+                        "row": index + 1,
+                        "company": _flat_text(company)[:160],
+                        "reason": error.message,
+                    }
+                )
                 continue
             columns = list(data.keys()) + ["profile_id", "created_at", "updated_at"]
             values = list(data.values()) + [profile_id, stamp, stamp]
@@ -1865,7 +1892,7 @@ def import_applications(db_path, profile_id, items):
         conn.commit()
     finally:
         conn.close()
-    return imported, skipped
+    return imported, skipped, problems
 
 
 # --------------------------------------------------------------------------
@@ -2319,8 +2346,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(405, "Method not allowed")
                 payload = self.read_json()
                 items = payload.get("applications") if isinstance(payload, dict) else payload
-                imported, skipped = import_applications(self.db_path, profile_id, items)
-                return self.send_json({"imported": imported, "skipped": skipped})
+                imported, skipped, problems = import_applications(
+                    self.db_path, profile_id, items
+                )
+                return self.send_json(
+                    {"imported": imported, "skipped": skipped, "problems": problems}
+                )
 
             if parts[0] == "applications" and len(parts) == 3 and parts[2] == "restore":
                 if self.command != "POST":

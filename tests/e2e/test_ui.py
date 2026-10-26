@@ -76,6 +76,10 @@ def test_importing_postings_without_a_status_saves_them_to_apply(page):
                 "company": "Airbus Defence and Space GmbH",
                 "role": "Junior Simulation Software Developer C/C++",
                 "location": "Manching, Bavaria, Germany",
+                "source": (
+                    "Airbus careers (seen via aggregator listings: speedyapply, freehire, "
+                    "Glassdoor; LinkedIn/Indeed also list Airbus Manching simulation roles)"
+                ),
                 "estimated_match_pct": 72,
                 "why_it_matches": "Junior C/C++ simulation role; thesis in C++17.",
                 "important_missing_requirements": "No avionics or real-time C experience.",
@@ -93,10 +97,11 @@ def test_importing_postings_without_a_status_saves_them_to_apply(page):
     )
     page.wait_for_selector("#modal-backdrop", state="hidden")
 
-    # Nothing was sent, so the job lands under To apply with its match estimate.
+    # Nothing was sent, so the job lands under To apply with its match estimate,
+    # and the import takes you there rather than leaving you on the Applied tab.
     assert page.locator("#count-toapply").inner_text() == "1"
     assert page.locator("#count-applied").inner_text() == "0"
-    page.click('[data-tab="to_apply"]')
+    assert page.evaluate("document.querySelector('.tab.is-active').dataset.tab") == "to_apply"
     page.wait_for_selector("#toapply-table-body tr")
     row = page.locator("#toapply-table-body tr").first
     assert "Airbus" in row.inner_text()

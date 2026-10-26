@@ -4,6 +4,7 @@
 import { $, api, download, state, toast, todayISO } from "./core.js";
 import { loadApps } from "./data.js";
 import { closeModal } from "./dialogs.js";
+import { setTab } from "./workspace.js";
 
 
 export function exportJSON() {
@@ -280,19 +281,35 @@ export async function handleImportFile(file, options) {
     const parsed = isCSV ? rowsFromCSV(text) : rowsFromJSON(text);
     if (!parsed.rows.length) {
       throw new Error("No jobs found. A CSV needs company and role columns.");
-    }
-    if (status) status("Importing " + parsed.rows.length + " job(s)…", "ok");
+    }    if (status) status("Importing " + parsed.rows.length + " job(s)…", "ok");
     const result = await importRows(parsed.rows);
-    const skipped = parsed.skipped + result.skipped;
+    const imported = Number(result.imported) || 0;
+    const skipped = parsed.skipped + (Number(result.skipped) || 0);
     // A row that names no status was never applied to; the server saves it to apply.
-    const savedToApply = parsed.rows.filter((row) => !row.phase && !row.status).length;
+    const savedRows = Math.min(
+      parsed.rows.filter((row) => !row.phase && !row.status).length,
+      imported
+    );
+    const sentRows = imported - savedRows;
+    const reasons = (result.problems || []).map((problem) => problem.reason).filter(Boolean);
+    if (parsed.skipped) reasons.push("a row has no company or role");
+    const shownReasons = Array.from(new Set(reasons)).slice(0, 2);
     const summary =
-      "Imported " + result.imported + " job(s)" +
-      (savedToApply ? " — " + savedToApply + " saved to apply" : "") +
-      (skipped ? ", skipped " + skipped + " row(s) missing company or role" : "") + ".";
+      "Imported " + imported + " job" + (imported === 1 ? "" : "s") +
+      (savedRows ? " — " + savedRows + " saved to apply" : "") +
+      (sentRows ? (savedRows ? " and " : " — ") + sentRows + " marked as applied" : "") +
+      (skipped
+        ? ", skipped " + skipped + " row" + (skipped === 1 ? "" : "s") +
+          (shownReasons.length ? ": " + shownReasons.join("; ") : "")
+        : "") +
+      ".";
     toast(summary);
     if (status) status(summary, "ok");
     if (settings.closeModal) closeModal();
+    // Show the list the import actually filled, rather than leaving the user on
+    // whichever tab they happened to open the dialog from.
+    if (imported && !sentRows) setTab("to_apply");
+    else if (imported && !savedRows) setTab("applied");
   } catch (error) {
     const message = error.message || "Import failed";
     if (status) status(message, "error");

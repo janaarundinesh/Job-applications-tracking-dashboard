@@ -304,7 +304,7 @@ def test_import_without_a_status_saves_to_apply(api):
             ]
         },
     )
-    assert response.data == {"imported": 1, "skipped": 0}
+    assert response.data == {"imported": 1, "skipped": 0, "problems": []}
 
     job = api.get("/api/applications").data[0]
     assert job["phase"] == "to_apply"
@@ -318,6 +318,53 @@ def test_import_without_a_status_saves_to_apply(api):
     # Everything else about the posting is kept as before.
     assert job["description"].startswith("Develop C/C++ simulation models")
     assert job["location"] == "Manching, Bavaria, Germany"
+
+
+def test_import_shortens_long_fields_instead_of_losing_the_job(api):
+    """An aggregator listing can carry a source past the app's limit; keep the job."""
+    source = (
+        "Airbus careers (seen via aggregator listings: speedyapply, freehire, "
+        "Glassdoor; LinkedIn/Indeed also list Airbus Manching simulation roles)"
+    )
+    response = api.post(
+        "/api/import",
+        {
+            "applications": [
+                {
+                    "company": "Airbus Defence and Space GmbH",
+                    "role": "Junior Simulation Software Developer C/C++ (m/f/d)",
+                    "source": source,
+                    "description": "d" * 25000,
+                }
+            ]
+        },
+    )
+    assert response.data == {"imported": 1, "skipped": 0, "problems": []}
+
+    job = api.get("/api/applications").data[0]
+    assert job["company"] == "Airbus Defence and Space GmbH"
+    assert job["phase"] == "to_apply"
+    assert len(source) > 100
+    assert len(job["source"]) == 100 and job["source"].endswith("\u2026")
+    assert len(job["description"]) == 20000
+
+
+def test_import_says_why_a_row_was_skipped(api):
+    response = api.post(
+        "/api/import",
+        {
+            "applications": [
+                {"company": "", "role": "Engineer"},
+                {"company": "Kept Co", "role": "Engineer"},
+            ]
+        },
+    )
+    assert response.data["imported"] == 1
+    assert response.data["skipped"] == 1
+    assert response.data["problems"] == [
+        {"row": 1, "company": "", "reason": "Company is required"}
+    ]
+    assert [app["company"] for app in api.get("/api/applications").data] == ["Kept Co"]
 
 
 def test_import_keeps_rows_that_name_a_stage_applied(api):
