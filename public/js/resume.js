@@ -164,8 +164,7 @@ function renderAssets() {
           .join("") +
         "</ul>"
       : '<p class="resume-rail-empty">Nothing here yet. Upload a photo, a bibliography or a note to use beside the <code>.tex</code>.</p>') +
-    '<label class="resume-upload">' + UPLOAD_ICON + 'Upload files<input type="file" id="resume-file-input" multiple hidden /></label>' +
-    '<p class="resume-assets-hint">Drop files here, then use one in the source: <code>\\includegraphics[width=3cm]{profile.png}</code></p>';
+    '<label class="resume-upload">' + UPLOAD_ICON + 'Upload files<input type="file" id="resume-file-input" multiple hidden /></label>';
 }
 
 

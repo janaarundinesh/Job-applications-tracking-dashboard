@@ -3158,15 +3158,6 @@ body.tab-resume .resume-view {
 }
 .resume-new-link:hover { color: var(--accent-strong); }
 
-.resume-rail-foot {
-  margin: auto 4px 0;
-  padding-top: 14px;
-  font-size: 10.5px;
-  line-height: 1.5;
-  color: var(--text-faint);
-}
-.resume-rail-foot code { font-size: 10px; }
-
 /* empty state */
 
 .resume-empty {
@@ -3538,7 +3529,7 @@ body.tab-resume .resume-view {
     overflow-x: auto;
     overflow-y: hidden;
   }
-  .resume-rail-head, .resume-rail-group h3, .resume-rail-foot, .resume-new-link { display: none; }
+  .resume-rail-head, .resume-rail-group h3, .resume-new-link { display: none; }
   .resume-tree { display: flex; gap: 6px; }
   .resume-rail-group { display: flex; gap: 6px; margin: 0; }
   .resume-file { width: auto; white-space: nowrap; }
@@ -3652,14 +3643,6 @@ body.tab-resume .resume-view {
   background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
 }
 .resume-upload svg { width: 13px; height: 13px; }
-
-.resume-assets-hint {
-  margin: 7px 4px 2px;
-  font-size: 9.5px;
-  line-height: 1.45;
-  color: var(--text-faint);
-}
-.resume-assets-hint code { font-size: 9px; word-break: break-all; }
 
 /* an uploaded image used by \includegraphics */
 
