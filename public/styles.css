@@ -218,27 +218,38 @@ kbd {
   color: inherit;
 }
 
+/* The app's own icon, drawn by public/favicon.svg: a dark tile with the
+   gradient J, so the mark in the corner is the thing in the Dock. */
 .brand-mark {
   display: grid;
   place-items: center;
+  flex: none;
   width: 36px;
   height: 36px;
-  border-radius: 12px;
-  color: #fff;
-  background: linear-gradient(150deg, #8b9cff, #b06bff 62%, #7ba7ff);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #0b0e1d;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -7px 14px rgba(52, 26, 110, 0.35),
-    0 14px 30px -16px rgba(123, 140, 255, 0.9);
+    inset 0 0 0 1px rgba(143, 162, 255, 0.24),
+    0 12px 26px -14px rgba(109, 92, 255, 0.85);
 }
 
-.brand-mark svg { width: 20px; height: 20px; }
+.brand-mark img { display: block; width: 100%; height: 100%; }
 
 [data-theme="dark"] .icon-sun,
 [data-theme="light"] .icon-moon { display: none; }
 
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
-.brand-text strong { font-size: 15px; letter-spacing: -0.015em; }
+.brand-text strong {
+  font-size: 15px;
+  letter-spacing: -0.015em;
+  /* The wordmark's violet-to-blue, on whatever text colour the theme sets, so
+     it stays legible if a browser cannot clip a gradient to text. */
+  background-image: linear-gradient(100deg, #c084fc, #7c6cf6 55%, #35a8f5);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 .brand-text span { font-size: 11.5px; color: var(--text-faint); letter-spacing: 0.02em; }
 
 /* The tagline is a sentence, and the topbar also holds five tabs and six
@@ -2897,9 +2908,8 @@ html.is-welcome .page { display: none; }
   .brand:hover .brand-mark {
     transform: translateY(-1px) scale(1.04);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.6),
-      inset 0 -7px 14px rgba(52, 26, 110, 0.35),
-      0 20px 38px -18px rgba(123, 140, 255, 0.95);
+      inset 0 0 0 1px rgba(143, 162, 255, 0.4),
+      0 18px 34px -16px rgba(109, 92, 255, 1);
   }
 
   .btn:hover { transform: translateY(-1px); }

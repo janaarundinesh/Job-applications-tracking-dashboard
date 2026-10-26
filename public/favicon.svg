@@ -1,11 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jobby">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8b9bff"/>
-      <stop offset="1" stop-color="#a855f7"/>
+    <linearGradient id="tile" x1="0.1" y1="0" x2="0.55" y2="1">
+      <stop offset="0" stop-color="#1a2040"/>
+      <stop offset="0.5" stop-color="#0e1230"/>
+      <stop offset="1" stop-color="#06080f"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0.2" y1="0" x2="0.5" y2="0.7">
+      <stop offset="0" stop-color="#8fa2ff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#8fa2ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0.14" y1="0.9" x2="0.88" y2="0.14">
+      <stop offset="0" stop-color="#e040fb"/>
+      <stop offset="0.42" stop-color="#8b5cf6"/>
+      <stop offset="0.72" stop-color="#4f6bff"/>
+      <stop offset="1" stop-color="#25b3f5"/>
     </linearGradient>
   </defs>
-  <rect width="32" height="32" rx="8" fill="url(#g)"/>
-  <path d="M9 11h14M9 16h9M9 21h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
-  <circle cx="22.5" cy="21" r="2.6" fill="none" stroke="#fff" stroke-width="2"/>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="116" fill="url(#sheen)"/>
+  <rect x="1" y="1" width="510" height="510" rx="115" fill="none" stroke="#8098ff" stroke-opacity="0.24" stroke-width="2"/>
+  <path d="M320 248V336c0 47-37 71-78 64-35-6-60-33-63-68" fill="none" stroke="url(#mark)"
+        stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="320" cy="148" r="42" fill="url(#mark)"/>
 </svg>
