@@ -1051,3 +1051,28 @@ def test_settings_shows_the_engine_and_installs_it_on_one_click(page, monkeypatc
         "() => /Available/.test(document.querySelector('#settings-menu-engine').textContent)"
     )
     assert "Tectonic 9.9.9" in page.inner_text("#settings-menu-engine")
+
+
+def test_set_goals_opens_the_goals_panel(page):
+    """The Overview's Set goals link goes to the numbers, not the menu behind them."""
+    enter_profile(page)
+    page.click('[data-action="open-settings"][data-open-settings="goals"]')
+    page.wait_for_selector("#settings-backdrop:not([hidden])")
+    page.wait_for_selector('[data-settings-panel="goals"]:not([hidden])')
+    assert page.inner_text("#settings-title") == "Goals"
+    assert page.locator("#settings-hub").is_hidden()
+    assert page.locator("#settings-save").is_visible()
+    # The cursor lands in the first number a frame after the panel appears.
+    page.wait_for_function("() => document.activeElement.id === 'settings-daily'")
+
+    page.fill("#settings-daily", "5")
+    page.fill("#settings-weekly", "20")
+    page.click("#settings-save")
+    page.wait_for_selector("#toasts .toast")
+    assert "Settings updated" in page.inner_text("#toasts")
+
+    # The gear keeps opening the menu, as before.
+    page.click("#settings-btn")
+    page.wait_for_selector("#settings-hub:not([hidden])")
+    assert page.locator('[data-settings-panel="goals"]').is_hidden()
+    assert page.inner_text("#settings-title") == "Settings"

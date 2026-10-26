@@ -162,8 +162,10 @@ export function bindEvents() {
       openModal(null);
       return;
     }
-    if (event.target.closest('[data-action="open-settings"]')) {
-      openSettings();
+    const settingsLink = event.target.closest('[data-action="open-settings"]');
+    if (settingsLink) {
+      // Set goals opens the goals panel itself rather than the menu behind it.
+      openSettings(settingsLink.dataset.openSettings);
       return;
     }
     if (event.target.closest('[data-action="go-to-apply"]')) {
@@ -315,7 +317,7 @@ export function bindEvents() {
     if (pick) selectProfile(Number(pick.dataset.selectProfile));
   });
 
-  $("#settings-btn").addEventListener("click", openSettings);
+  $("#settings-btn").addEventListener("click", () => openSettings());
   $("#settings-back").addEventListener("click", () => showSettingsView("menu"));
   $("#settings-menu").addEventListener("click", (event) => {
     const action = event.target.closest("[data-settings-action]");

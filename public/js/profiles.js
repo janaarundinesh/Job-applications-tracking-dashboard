@@ -617,6 +617,9 @@ export function showSettingsView(view) {
   if (target === "menu") {
     const first = $("#settings-menu .settings-row");
     if (first) window.setTimeout(() => first.focus(), 30);
+  } else if (target === "goals") {
+    // Opened from Set goals: the cursor belongs in the first number, not nowhere.
+    window.setTimeout(() => $("#settings-daily").select(), 30);
   }
 }
 
@@ -679,7 +682,9 @@ export async function logoutProfile() {
 }
 
 
-export function openSettings() {
+/* `view` opens straight into one of the panels ("goals" from the Overview's Set
+   goals link); the header gear leaves it out and lands on the menu. */
+export function openSettings(view) {
   const profile = activeProfile();
   $("#settings-name").value = profile ? profile.name : "";
   $("#settings-headline").value = profile ? profile.headline || "" : "";
@@ -700,7 +705,7 @@ export function openSettings() {
   $("#settings-delete-profile").hidden = state.profiles.length <= 1;
   $("#settings-backdrop").hidden = false;
   document.body.classList.add("no-scroll");
-  showSettingsView("menu");
+  showSettingsView(typeof view === "string" ? view : "menu");
 }
 
 
