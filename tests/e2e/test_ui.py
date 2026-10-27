@@ -18,6 +18,55 @@ def enter_profile(page):
     page.wait_for_selector("#panel-overview:not([hidden])")
 
 
+def screen_state(page):
+    """What the app is showing, for a failure that would otherwise be a timeout."""
+    return page.evaluate(
+        """() => ({
+             picker: document.querySelector('#welcome')
+               ? !document.querySelector('#welcome').hidden
+               : null,
+             cards: document.querySelectorAll('#welcome-list [data-enter-profile]').length,
+             picker_text: (document.querySelector('#welcome-list') || {}).textContent || '',
+             tabs: document.querySelectorAll('#main-tabs .tab').length,
+             guard: document.querySelector('#file-guard')
+               ? !document.querySelector('#file-guard').hidden
+               : null,
+             toasts: (document.querySelector('#toasts') || {}).textContent || '',
+             classes: document.documentElement.className,
+           })"""
+    )
+
+
+def enter_profile_after_reload(page):
+    """A reload lands in one of two places; step in only if asked who you are.
+
+    The app remembers the profile in this tab, so a reload either goes straight
+    back into it or opens the picker. Which one is not known until the app has
+    booted, and asking too early answers "neither" - an is_visible() asked while
+    the app is still loading says no for both screens, and the click that follows
+    then waits for a dashboard that is never coming. So wait for a screen that is
+    *ready*: the picker with a profile to enter, or a tab strip to click. A failure
+    here says what the app was showing instead, because the only place this race
+    has been seen is a slower machine, where a timeout says nothing.
+    """
+    try:
+        page.wait_for_function(
+            """() => {
+                 const welcome = document.querySelector('#welcome');
+                 const picker = welcome && !welcome.hidden &&
+                   document.querySelector('#welcome-list [data-enter-profile]');
+                 const tab = document.querySelector('[data-tab="overview"]');
+                 const dashboard = tab && tab.getBoundingClientRect().width > 0;
+                 return Boolean(picker || dashboard);
+               }""",
+            timeout=15000,
+        )
+    except Exception as error:
+        raise AssertionError("the app showed neither screen: %s" % screen_state(page)) from error
+    if page.locator("#welcome-list [data-enter-profile]").is_visible():
+        enter_profile(page)
+
+
 def api_post(page, path, payload):
     """POST through the dashboard's own session, like the app does."""
     return page.evaluate(
@@ -525,8 +574,12 @@ def test_a_failed_request_turns_the_indicator_red_and_retry_clears_it(playwright
             asked.append(route.request.url)
             route.abort()
 
-        page.route("**/api/health", dead_server)
-        page.route("**/api/resumes", dead_server)
+        # Both patterns end in * : the page's own requests carry a query (the
+        # health probe always names the tab it is reporting for), and a glob
+        # without the * matches the path only, so the request would sail past
+        # the route and reach the real server.
+        page.route("**/api/health*", dead_server)
+        page.route("**/api/resumes*", dead_server)
 
         # Opening a tab asks the server for its list, and that request now
         # fails: the pill has to say so at once, not on the next heartbeat.
@@ -538,14 +591,14 @@ def test_a_failed_request_turns_the_indicator_red_and_retry_clears_it(playwright
         # Retry checks there and then, and does not claim the server is back.
         page.click("#server-status-retry")
         page.wait_for_selector('#server-status[data-state="offline"]', timeout=10000)
-        assert any(url.endswith("/api/health") for url in asked)
+        assert any("/api/health" in url for url in asked), asked
 
         # A server that is down long enough to notice: coming back is worth
         # saying. Coming back to the tab asks again straight away, which is the
         # one check a test can time reliably.
         page.wait_for_timeout(5200)
-        page.unroute("**/api/health")
-        page.unroute("**/api/resumes")
+        page.unroute("**/api/health*")
+        page.unroute("**/api/resumes*")
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
         page.wait_for_selector('#server-status[data-state="online"]', timeout=10000)
         assert page.locator("#server-status-text").inner_text() == "Server active"
@@ -641,11 +694,7 @@ def test_resume_editor_renders_the_source_and_keeps_files(page):
 
     # Both the source and the file survive a reload.
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     open_resume_tab(page)
     page.wait_for_selector(".resume-asset-name")
     assert "Built a particle model" in page.input_value("#resume-source")
@@ -660,11 +709,7 @@ def test_a_job_gets_a_tailored_resume(page):
     )
     assert created["status"] == 201
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#welcome-list [data-enter-profile]')"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
     page.locator("#toapply-table-body tr").first.click()
@@ -698,11 +743,7 @@ def test_jobs_sort_and_filter_by_resume_match(page):
         assert api_post(page, "/api/applications", payload)["status"] == 201
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
 
@@ -812,11 +853,7 @@ def test_applied_list_selects_all_and_bulk_deletes(page):
         assert api_post(page, "/api/applications", {"company": company, "role": "Engineer"})["status"] == 201
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
 
     # Saved jobs come before the applications you have already sent.
     labels = [label.strip() for label in page.locator("#main-tabs .tab").all_inner_texts()]
@@ -875,11 +912,7 @@ def test_applied_bulk_bar_moves_several_jobs_to_a_stage(page):
         assert api_post(page, "/api/applications", {"company": company, "role": "Engineer"})["status"] == 201
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="applied"]')
     page.wait_for_selector("#applied-table-body tr")
 
@@ -947,11 +980,7 @@ def test_marking_saved_jobs_applied_can_be_undone(page):
         )
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
 
@@ -990,11 +1019,7 @@ def test_long_values_do_not_push_the_match_column_off_screen(page):
     assert response["status"] == 200 and response["body"]["imported"] == 1
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
 
@@ -1044,11 +1069,7 @@ def test_the_tables_show_the_job_link_instead_of_the_next_step(page):
         assert api_post(page, "/api/applications", payload)["status"] == 201
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
 
@@ -1126,11 +1147,7 @@ def test_a_job_closed_while_it_opens_still_closes(page):
         {"company": "Fast Close Co", "role": "Engineer", "phase": "to_apply"},
     )["status"] == 201
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
 
@@ -1158,11 +1175,7 @@ def test_every_tab_uses_the_whole_window(page):
         )
         assert created["status"] == 201
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     for tab in ("overview", "to_apply", "applied", "resume", "trash"):
         page.click('[data-tab="%s"]' % tab)
         page.wait_for_timeout(200)
@@ -1238,11 +1251,7 @@ def test_compile_shows_a_real_pdf_and_falls_back_on_tex_errors(page):
     assert base64.b64decode(probe["body"]["pdf"]).startswith(b"%PDF")
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="resume"]')
     page.wait_for_selector("#panel-resume:not([hidden])")
     page.wait_for_selector("#resume-editor-area:not([hidden])")
@@ -1334,11 +1343,7 @@ def test_saving_the_pdf_and_attaching_it_from_the_job(page):
     assert job["status"] == 201
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     open_resume_in_editor(page, resume_id, "master_cv.tex")
 
     # Nothing compiled yet, so there is nothing to save.
@@ -1539,11 +1544,7 @@ def test_uploading_into_a_taken_slot_offers_to_replace(page):
     )
     assert created["status"] == 201
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
     page.locator("#toapply-table-body tr").first.click()
@@ -1728,11 +1729,7 @@ def test_a_document_that_vanished_offers_try_again(page):
     document_id = uploaded["body"]["id"]
 
     page.reload()
-    page.wait_for_function(
-        "() => !document.querySelector('#welcome').hidden || !document.querySelector('#panel-overview').hidden"
-    )
-    if page.locator("#welcome-list [data-enter-profile]").is_visible():
-        enter_profile(page)
+    enter_profile_after_reload(page)
     page.click('[data-tab="to_apply"]')
     page.wait_for_selector("#toapply-table-body tr")
     page.locator("#toapply-table-body tr").first.click()
