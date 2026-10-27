@@ -52,7 +52,7 @@ echo.
 rem The dashboard opens in its own window as soon as the server answers, in
 rem the background, so this console can keep the server in the foreground. A
 rem restart does not open a second one.
-start "" /b wscript //nologo "%~dp0Jobby.vbs" /wait
+start "" /b wscript //nologo "%~dp0Jobby.vbs" wait
 set "QUICK=0"
 
 :run
@@ -104,5 +104,5 @@ goto :eof
 
 rem The dashboard in its own window, through the same app script as Jobby.vbs.
 :openwindow
-start "" /b wscript //nologo "%~dp0Jobby.vbs" /wait
+start "" /b wscript //nologo "%~dp0Jobby.vbs" wait
 goto :eof

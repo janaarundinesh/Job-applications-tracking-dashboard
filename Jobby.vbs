@@ -14,7 +14,7 @@ Option Explicit
 Const PORT = 8787
 Const SERVER = "server.py"
 
-Dim shell, fso, root, url, logFile, python, pythonArgs
+Dim shell, fso, root, url, logFile, python, pythonArgs, windowOnly
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
@@ -31,7 +31,17 @@ End If
 ' "Start Jobby.bat" keeps the server in its own console and asks for the window
 ' only, once the server answers; a window that cannot be opened leaves it there
 ' to print the error itself.
-If WScript.Arguments.Named.Exists("wait") Then
+'
+' The flag is a bare word rather than /wait: a named argument is only named with
+' a colon and a value (/wait:1), so a slash and a name arrives as a plain
+' argument and would be missed. The count is checked on its own line because
+' And here does not short-circuit: Arguments(0) would fail on a double-click
+' that has no arguments at all.
+windowOnly = False
+If WScript.Arguments.Count > 0 Then
+  windowOnly = (LCase(WScript.Arguments(0)) = "wait")
+End If
+If windowOnly Then
   If WaitForServer() Then
     OpenDashboard
   End If
