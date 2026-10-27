@@ -2367,6 +2367,9 @@ class Handler(BaseHTTPRequestHandler):
     allowed_hosts = frozenset()
     # When the last request arrived. --exit-when-idle watches this.
     last_seen = time.monotonic()
+    # The open dashboard pages, when the app started this server. None in a
+    # terminal, where the server keeps running until Ctrl+C.
+    auto_stop = None
 
     def log_message(self, fmt, *args):
         sys.stderr.write(
@@ -2684,6 +2687,26 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "Unknown endpoint")
 
             if parts[0] == "health" and self.command == "GET":
+                if Handler.auto_stop is not None:
+                    client = (self.query.get("client") or [""])[0].strip()
+                    if client:
+                        loaded = (self.query.get("hello") or [""])[0] == "1"
+                        if loaded:
+                            Handler.auto_stop.hello(client)
+                        else:
+                            Handler.auto_stop.touch(client)
+                return self.send_json({"ok": True})
+
+            if parts[0] == "bye" and self.command == "POST":
+                # The last thing a closing dashboard says. It carries no token
+                # because a beacon on unload cannot reliably send headers, and no
+                # Origin either. What protects it is the id: a page can only end
+                # itself, and an id nothing has registered changes nothing.
+                if Handler.auto_stop is not None:
+                    payload = self.read_json()
+                    client = payload.get("client") if isinstance(payload, dict) else None
+                    if isinstance(client, str) and client.strip():
+                        Handler.auto_stop.bye(client.strip())
                 return self.send_json({"ok": True})
 
             self.guard(parts)
@@ -3005,6 +3028,81 @@ class Handler(BaseHTTPRequestHandler):
         self.route()
 
 
+class DashboardClients:
+    """The dashboard pages that are open, so the server can stop with them.
+
+    A server started by Jobby.app has no window of its own: it lives only as long
+    as the dashboard does. Every tab or window sends a random id with its
+    heartbeat; when one closes it says goodbye, and once none is left the server
+    stops. A short pause before that means a reload — goodbye from the old page,
+    hello from the new one — leaves the server alone.
+
+    Only the app installs this: a server started from a terminal keeps running
+    until Ctrl+C, and the idle watch above stays as the backstop for a page that
+    vanishes without saying anything (a crash, a killed process).
+    """
+
+    def __init__(self, grace=5.0, forget=1800.0, clock=time.monotonic, schedule=None):
+        self._lock = threading.Lock()
+        self._seen = {}
+        # Pages that have said goodbye. A heartbeat already on its way must not
+        # bring one back; only a page *load* (a hello) can.
+        self._closed = {}
+        self.grace = grace
+        self.forget = forget
+        self.clock = clock
+        self.schedule = schedule or self._later
+        self.on_empty = None
+        self._pending = False
+
+    @staticmethod
+    def _later(seconds, callback):
+        timer = threading.Timer(seconds, callback)
+        timer.daemon = True
+        timer.start()
+        return timer
+
+    def hello(self, client):
+        """A page has loaded: it is here, whatever happened to its last visit."""
+        with self._lock:
+            self._closed.pop(client, None)
+            self._seen[client] = self.clock()
+
+    def touch(self, client):
+        """A heartbeat. It keeps a page alive, but cannot revive a closed one."""
+        with self._lock:
+            if client in self._closed:
+                return
+            self._seen[client] = self.clock()
+
+    def bye(self, client):
+        with self._lock:
+            # An id this server has not seen cannot end anything; that is what
+            # keeps a stray request from a web page from stopping the server.
+            if client not in self._seen:
+                return
+            del self._seen[client]
+            self._closed[client] = self.clock()
+            if self._seen or self._pending:
+                return
+            self._pending = True
+        self.schedule(self.grace, self._check)
+
+    def _check(self):
+        with self._lock:
+            self._pending = False
+            now = self.clock()
+            for key in [key for key, seen in self._seen.items() if seen < now - self.forget]:
+                del self._seen[key]
+            # A closed id is forgotten soon after; a page that comes back later
+            # (a reload that took its time) is simply a page again.
+            for key in [key for key, closed in self._closed.items() if closed < now - 30]:
+                del self._closed[key]
+            empty = not self._seen
+        if empty and self.on_empty is not None:
+            self.on_empty()
+
+
 def watch_idle(server, idle_seconds, interval=None, clock=time.monotonic, sleep=time.sleep, report=print):
     """Stop the server once nothing has asked it for anything for a while.
 
@@ -3054,6 +3152,10 @@ def main(argv=None):
         threading.Thread(
             target=watch_idle, args=(server, args.exit_when_idle), daemon=True
         ).start()
+        # ...and sooner than that when the last dashboard says it is closing.
+        clients = DashboardClients()
+        clients.on_empty = server.shutdown
+        Handler.auto_stop = clients
     if args.open:
         import webbrowser
 

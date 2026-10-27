@@ -13,18 +13,54 @@
 
 import { $, state, toast } from "./core.js";
 
+const CLIENT_KEY = "jobpipe:dashboard";
 const STEADY_MS = 20000; // heartbeat while the server answers
 const RETRY_MIN_MS = 2000; // first wait once it stops answering
 const RETRY_MAX_MS = 20000; // slowest wait while it stays away
 const PROBE_TIMEOUT_MS = 4000; // a socket that hangs is not an answer either
 const BLIP_MS = 5000; // shorter than this and it was a hiccup, not an outage
 
+/* This tab's name with the server, so it can stop when the last one closes.
+   sessionStorage keeps the same id across a reload, which is what lets the
+   server tell a reload (goodbye, then hello) from a closing window. */
+function dashboardId() {
+  try {
+    let id = window.sessionStorage.getItem(CLIENT_KEY);
+    if (!id) {
+      id =
+        window.crypto && typeof window.crypto.randomUUID === "function"
+          ? window.crypto.randomUUID()
+          : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      window.sessionStorage.setItem(CLIENT_KEY, id);
+    }
+    return id;
+  } catch (error) {
+    return "";
+  }
+}
+
+const CLIENT = dashboardId();
+
 let timer = null;
 let probing = false;
+let inFlight = null; // the health request on its way, if any
+let announced = false; // this page has told the server it has loaded
 let wait = RETRY_MIN_MS;
 let online = null; // null until the first answer: "checking"
 let seen = false; // the server has answered at least once in this tab
 let downSince = 0; // when the current outage began; 0 while it answers
+
+// Closing this tab or window says so, so the app's server can stop with it
+// instead of waiting out its idle timeout. A probe still on its way is dropped
+// first: a heartbeat that landed after the goodbye would look like a page that
+// is still open. Something kept in the back/forward cache is still open, so it
+// stays quiet.
+window.addEventListener("pagehide", (event) => {
+  if (event.persisted) return;
+  if (inFlight) inFlight.abort();
+  if (!CLIENT || !navigator.sendBeacon) return;
+  navigator.sendBeacon("/api/bye", JSON.stringify({ client: CLIENT }));
+});
 
 
 function address() {
@@ -102,6 +138,9 @@ function note(reachable) {
   // failed requests must not walk the backoff out from under it.
   if (online === false) return;
   if (!downSince) downSince = Date.now();
+  // The next page to reach a server — this one, or a restarted one — has to say
+  // it is here rather than being taken for a heartbeat.
+  announced = false;
   online = false;
   state.serverOnline = false;
   paint();
@@ -121,8 +160,12 @@ async function probe() {
   let reachable = false;
   const controller = typeof AbortController === "function" ? new AbortController() : null;
   const abort = controller ? window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS) : null;
+  inFlight = controller;
   try {
-    const response = await fetch("/api/health", {
+    const query = CLIENT
+      ? "?client=" + encodeURIComponent(CLIENT) + (announced ? "" : "&hello=1")
+      : "";
+    const response = await fetch("/api/health" + query, {
       cache: "no-store",
       signal: controller ? controller.signal : undefined,
     });
@@ -130,10 +173,12 @@ async function probe() {
     // Read the body out: a response left hanging keeps this request open, and
     // the page would then never look idle to anything watching its network.
     await response.text();
+    if (reachable) announced = true;
   } catch (error) {
     reachable = false;
   } finally {
     if (abort) window.clearTimeout(abort);
+    if (inFlight === controller) inFlight = null;
     probing = false;
   }
   note(reachable);

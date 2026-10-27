@@ -15,6 +15,36 @@ def test_health(api):
     assert response.data == {"ok": True}
 
 
+def test_a_closing_dashboard_says_goodbye_without_the_token(api, monkeypatch):
+    # Everything else on the API needs the session token; a beacon sent on
+    # unload cannot carry one, so this one call is accepted from the dashboard's
+    # own origin alone.
+    pending = []
+    tracker = server.DashboardClients(schedule=lambda seconds, callback: pending.append(callback))
+    stopped = []
+    tracker.on_empty = lambda: stopped.append(True)
+    monkeypatch.setattr(server.Handler, "auto_stop", tracker)
+
+    assert api.get("/api/health?client=tab-1").status == 200
+    assert api.post("/api/bye", {"client": "tab-1"}).status == 200
+    assert len(pending) == 1, "the goodbye did not schedule a stop"
+    pending[0]()
+    assert stopped == [True]
+
+
+def test_a_goodbye_for_an_unknown_page_changes_nothing(api, monkeypatch):
+    # Anything on this machine can post to the port, but it cannot know the id a
+    # dashboard tab keeps to itself, so a guessed one ends nothing.
+    pending = []
+    tracker = server.DashboardClients(schedule=lambda seconds, callback: pending.append(callback))
+    monkeypatch.setattr(server.Handler, "auto_stop", tracker)
+
+    assert api.get("/api/health?client=tab-1").status == 200
+    response = api.post("/api/bye", {"client": "made-up"})
+    assert response.status == 200
+    assert pending == []
+
+
 def test_create_defaults_and_list(api):
     created = api.create(company="Acme", role="Engineer")
     assert created["phase"] == "applied"

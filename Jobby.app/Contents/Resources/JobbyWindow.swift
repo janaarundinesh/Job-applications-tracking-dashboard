@@ -21,6 +21,9 @@ final class JobbyApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDel
     private var mainWindow: NSWindow?
     private var webView: WKWebView?
     private var extraWindows: [NSWindow] = []
+    // The dashboard page's id with the server, so closing the window can tell
+    // the server this page has gone even if the page itself is torn down first.
+    private var clientId: String?
 
     init(url: URL) {
         startURL = url
@@ -58,6 +61,34 @@ final class JobbyApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDel
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        sayGoodbye()
+    }
+
+    // The page sends its own goodbye on pagehide; this is the same goodbye from
+    // the app side, because a window closing can take the web view down without
+    // the page ever getting the chance.
+    private func sayGoodbye() {
+        guard let client = clientId, !client.isEmpty else { return }
+        guard let url = URL(string: "/api/bye", relativeTo: startURL) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 1
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["client": client])
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
+        _ = done.wait(timeout: .now() + 1.0)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.evaluateJavaScript("sessionStorage.getItem('jobpipe:dashboard')") { [weak self] value, _ in
+            if let id = value as? String, !id.isEmpty {
+                self?.clientId = id
+            }
+        }
     }
 
     // MARK: - The window's web view
