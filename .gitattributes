@@ -1,0 +1,6 @@
+# The launchers have to keep the endings their own platform reads: cmd.exe and
+# wscript want CRLF, and sh stops at a \r at the end of the shebang line.
+*.bat text eol=crlf
+*.vbs text eol=crlf
+*.command text eol=lf
+*.sh text eol=lf

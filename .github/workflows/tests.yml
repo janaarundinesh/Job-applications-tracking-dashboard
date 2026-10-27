@@ -21,6 +21,23 @@ jobs:
       - name: Run the API tests
         run: python -m pytest -q
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+
+      # The Windows app is a script, so reading it is not enough: here cscript
+      # runs it, which catches a syntax error before anyone double-clicks it.
+      - name: Run the launcher tests
+        run: python -m pytest tests/test_windows_launcher.py -q
+
   ui:
     runs-on: ubuntu-latest
     steps:

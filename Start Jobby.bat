@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Double-click to start Jobby and open the dashboard.
+rem Double-click to start Jobby and open the dashboard in its own window.
 rem Keep this window open while you use the app; Ctrl+C stops the server.
 rem
 rem A dashboard in a browser cannot start a process on this machine, so keeping
@@ -38,7 +38,7 @@ rem Already running? Just open the dashboard.
 %PY% -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen(sys.argv[1] + '/api/health', timeout=1.5).status == 200 else 1)" "%URL%" >nul 2>nul
 if not errorlevel 1 (
   echo Jobby is already running at %URL%
-  start "" "%URL%"
+  call :openwindow
   exit /b 0
 )
 
@@ -49,16 +49,17 @@ echo.
 echo Starting Jobby...
 echo.
 
-rem The first run opens the browser; a restart must not open a second tab.
-set "OPEN=--open"
+rem The dashboard opens in its own window as soon as the server answers, in
+rem the background, so this console can keep the server in the foreground. A
+rem restart does not open a second one.
+start "" /b wscript //nologo "%~dp0Jobby.vbs" /wait
 set "QUICK=0"
 
 :run
 call :seconds
 set "STARTED=%NOW%"
-%PY% server.py %OPEN%
+%PY% server.py
 set "STATUS=%ERRORLEVEL%"
-set "OPEN="
 call :seconds
 set "RAN=9999"
 if defined STARTED if defined NOW set /a "RAN=NOW-STARTED"
@@ -99,4 +100,9 @@ rem means no guard: the loop still restarts the server.
 :seconds
 set "NOW="
 for /f "tokens=1-3 delims=:.," %%a in ("%TIME: =0%") do set /a "NOW=(1%%a-100)*3600+(1%%b-100)*60+(1%%c-100)" 2>nul
+goto :eof
+
+rem The dashboard in its own window, through the same app script as Jobby.vbs.
+:openwindow
+start "" /b wscript //nologo "%~dp0Jobby.vbs" /wait
 goto :eof

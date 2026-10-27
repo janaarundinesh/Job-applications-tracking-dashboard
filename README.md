@@ -8,11 +8,13 @@ No accounts, no build step, no Python dependencies. Python 3.8+ standard library
 
 On macOS, double-click **Jobby.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard in its own window — no terminal window and no browser tab. That window is a small Swift program carried inside the bundle as source (`Contents/Resources/JobbyWindow.swift`) and compiled the first time the app opens, so there is still no build step and nothing to install; a machine without a Swift toolchain gets the dashboard in its browser instead. ⌘R reloads it, **View → Open in Browser** (⇧⌘O) puts the same page in your browser, and closing the window quits the app. Downloads land in your Downloads folder, as they would from a browser. It logs to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
 
+On Windows, double-click **Jobby.vbs** for the same thing: the server starts with no console window in the way, and the dashboard opens in a window of its own — Edge (on every Windows 10 and 11 machine) or Chrome in app mode, which is a plain window with no tab strip, no address bar and the Jobby icon on the taskbar. There is no compiled program here and nothing to install: the script is read and run by Windows itself. A machine with no Chromium browser still gets the dashboard, in a normal browser window. It logs to `data/server.log` as the app does, and closing that window stops the server a few seconds later — the same arrangement as macOS, reached a different way.
+
 The server cannot be a child of `Jobby.app`, because macOS tears an app's processes down when the app quits — and the dashboard is allowed to outlive the window (⇧⌘O, or a page left open in the browser). So the bundle carries a small invisible helper, `Jobby.app/Contents/Resources/JobbyServer.app`, which runs the server as its own app. Opening `Jobby.app` with the server already up only shows the dashboard.
 
-The server lives as long as the dashboard does. Opening the app starts it; closing the last dashboard — the app window, or a browser tab when that is what you were using — makes the page say goodbye, and the server stops about five seconds later instead of lingering. A reload says goodbye too and the new page says hello, so reloading never takes it down. A page that vanishes without saying anything (a crash, a forced quit) is still caught by the two-minute idle stop. What a browser cannot do is *start* the server: a web page may not run a program on your machine, so opening the dashboard in a browser while the server is down shows the start screen, with Jobby.app as the way to start it.
+The server lives as long as the dashboard does. Opening the app starts it; closing the last dashboard — the app window, or a browser tab when that is what you were using — makes the page say goodbye, and the server stops about five seconds later instead of lingering. A reload says goodbye too and the new page says hello, so reloading never takes it down. A page that vanishes without saying anything (a crash, a forced quit) is still caught by the two-minute idle stop. What a browser cannot do is *start* the server: a web page may not run a program on your machine, so opening the dashboard in a browser while the server is down shows the start screen, with Jobby.app (macOS) or Jobby.vbs (Windows) as the way to start it.
 
-The launchers are the same thing with a visible console: **Start Jobby.command** on macOS, **Start Jobby.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
+The launchers are the same thing with a visible console: **Start Jobby.command** on macOS, **Start Jobby.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — in the same app window `Jobby.vbs` opens on Windows, and in a browser tab on macOS — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
 
 Should the server die while you work, the launcher starts it again in the same window — without opening a second browser tab — and the dashboard reconnects on its own. If it fails three times within seconds of starting (a port already taken, a database it cannot open) the launcher stops trying and says so, instead of spinning forever.
 
@@ -57,7 +59,7 @@ Every screen is served by that one Python process, so the dashboard is only as a
 - **The launcher** on macOS (`Jobby.app`, which starts the server when it is not running) and the `.command` / `.bat`, which restart a server that died under them (see [Run it](#run-it)).
 - **Closing the dashboard**, which stops the server the app started: it goes two minutes after the last request it answered, since a dashboard asks for `/api/health` every 20 seconds. A server started in a terminal keeps running until `Ctrl+C` instead.
 
-A page in a browser cannot start a process on your computer, and that is the limit to know about. The Retry button only ever checks. *Starting* the server happens in a launcher: open **Jobby.app** again, double-click **Start Jobby.command** / **.bat**, or run `python3 server.py`.
+A page in a browser cannot start a process on your computer, and that is the limit to know about. The Retry button only ever checks. *Starting* the server happens in a launcher: open **Jobby.app** (macOS) or **Jobby.vbs** (Windows) again, double-click **Start Jobby.command** / **.bat**, or run `python3 server.py`.
 
 This is also why a dashboard installed with the browser's own *Install page as app* can show the start screen: that icon is the browser's, so opening it cannot start Python. Use **Jobby.app** in the Dock instead and the server is started for you — see [Which app icon to use](#which-app-icon-to-use).
 
@@ -66,6 +68,7 @@ This is also why a dashboard installed with the browser's own *Install page as a
 There are two ways to get an icon for this dashboard, and only one of them can start the server.
 
 - **Jobby.app** (macOS, in the project folder) — a real app bundle. Double-click it, or drag it to the Dock, and it starts the tracker, waits for it, and opens the dashboard. Keep the bundle where it is (dock an alias if you want it elsewhere), so it can find your data.
+- **Jobby.vbs** (Windows, in the project folder) — the same thing as a script, which is what Windows can run without a build step. Double-click it, or pin it to the taskbar, and it starts the tracker out of sight, waits for it, and opens the dashboard in its own window. Keep it beside `server.py`.
 - **The browser's install** (*Add to Dock* in Safari, *Install page as app* in Chrome) — a window without tabs. It looks the same, but it is a web page: while the server is down it can only show the *Start the Jobby server* screen. If you use this one, keep the server running (start it at login, or leave the `.command` window open) — or use the app bundle above instead.
 
 ## Install it as an app
@@ -256,14 +259,14 @@ The **API suite** covers creating and validating jobs, stage changes and their t
 
 The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, previews and downloads that profile's documents, opens a locked profile's resume file and its `\includegraphics` picture, sees a preview that cannot load offer **Try again**, checks that each match number and its drawer chip are coloured by their band, that the tables carry each job's link with any pasted note trimmed off, that a job closed while it opens still closes, that the topbar pill reports the server as active, turns red when a request cannot reach it, keeps **Retry** on hand and goes green again when the server answers — and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen, which **Check again** can leave and which steps into the dashboard by itself once the server is back.
 
-A third, small suite drives the launchers with stand-in tools. `Start Jobby.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned. `Jobby.app`'s launch script gets a `curl` that reports the server down and then up, so opening the helper, waiting for an answer, building the window (a stand-in `swiftc` writes a stub) and showing the dashboard — and leaving a running server alone — are pinned without a real port, compiler or browser; a second run makes the compiler fail, which pins the browser fallback. The helper's own script is run to check that it finds `server.py` from inside the bundle and starts it with `--exit-when-idle`.
+A third, small suite drives the launchers with stand-in tools. `Start Jobby.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned. `Jobby.app`'s launch script gets a `curl` that reports the server down and then up, so opening the helper, waiting for an answer, building the window (a stand-in `swiftc` writes a stub) and showing the dashboard — and leaving a running server alone — are pinned without a real port, compiler or browser; a second run makes the compiler fail, which pins the browser fallback. The helper's own script is run to check that it finds `server.py` from inside the bundle and starts it with `--exit-when-idle`. The Windows pair, `Jobby.vbs` and `Start Jobby.bat`, cannot be run on a Mac, so they are read the way Windows reads them — CRLF, single-byte text, the port and `/api/health` shared with `server.py`, every block closed — and `cscript` runs `Jobby.vbs` for real in a Windows job on GitHub Actions, where a syntax error cannot hide.
 
 
 ```bash
 python3 -m playwright install chromium   # once, after installing requirements-dev
 ```
 
-The browser suite is skipped unless `RUN_E2E=1`, so the pre-commit hook stays fast. GitHub Actions runs the API suite and, in a second job, the browser suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
+The browser suite is skipped unless `RUN_E2E=1`, so the pre-commit hook stays fast. GitHub Actions runs the API suite, the launcher scripts on Windows and, in another job, the browser suite on every push to `main` and on pull requests via [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
 ### Pre-commit hook
 
@@ -291,8 +294,9 @@ Jobby.app               macOS app bundle: starts the server if needed, then open
                         the dashboard window (WKWebView), compiled on first launch
   Contents/Resources/JobbyServer.app
                         invisible helper app that runs the server so it outlives Jobby.app
+Jobby.vbs               Windows app: starts the server unseen, opens the dashboard in its own window
 Start Jobby.command     macOS double-click launcher (same thing, in a terminal window)
-Start Jobby.bat         Windows double-click launcher (same thing)
+Start Jobby.bat         Windows double-click launcher (the same window, with a visible console)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage
 extract.py       Job posting extraction (JSON-LD + OpenGraph, stdlib only)
 public/          Dashboard UI: index.html, styles.css, sw.js, manifest.webmanifest, icons
