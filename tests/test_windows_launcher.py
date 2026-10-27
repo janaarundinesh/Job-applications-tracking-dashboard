@@ -43,7 +43,9 @@ started = Timer
 WScript.Sleep 250
 WScript.Echo "sleep_ms=" & Round((Timer - started) * 1000)
 On Error Resume Next
-Set request = CreateObject("MSXML2.XMLHTTP.6.0")
+Set request = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+request.setTimeouts 1000, 1000, 1000, 1000
+request.setProxy 1
 WScript.Echo "create_err=" & Err.Number
 Err.Clear
 started = Timer
@@ -133,8 +135,15 @@ def test_the_double_click_waits_but_never_hangs():
     # still starting up; the wait is bounded, so a server that never comes up
     # ends in a dialog instead of a process that waits for ever.
     assert 'url & "/api/health"' in script
-    assert "For attempt = 1 To 80" in script
-    assert "WScript.Sleep 250" in script
+    # On the clock, not in tries: a probe that spends its own second failing
+    # must not be able to turn twenty seconds into an hour.
+    assert 'Do While DateDiff("s", started, Now()) < 20' in script
+    assert "WScript.Sleep 200" in script
+    # WinHTTP, told to go direct and to give up quickly, rather than the browser
+    # stack with its proxy settings and its auto-detection.
+    assert 'CreateObject("MSXML2.ServerXMLHTTP.6.0")' in script
+    assert "setTimeouts 1000, 1000, 1000, 1000" in script
+    assert "setProxy 1" in script
     assert "The tracker did not start." in script
     # "wait" is a plain argument, not /wait: only /name:value is a named
     # argument, so a slash and a name would be read as something else entirely.
@@ -180,6 +189,7 @@ def test_the_script_parses():
         (r"^\s*(Function|Sub)\s+\w+\s*\(", r"^\s*End (Function|Sub)\s*$"),
         (r"^\s*If\b.*\bThen\s*$", r"^\s*End If\s*$"),
         (r"^\s*For\b.*$", r"^\s*Next\s*$"),
+        (r"^\s*Do\b.*$", r"^\s*Loop\s*$"),
     ]
     assert lines[0].startswith("'"), "the file should open with its own notes"
     assert "Option Explicit" in lines
@@ -256,7 +266,7 @@ def test_a_wait_run_only_waits(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="cscript is Windows only")
-def test_the_probe_a_closed_port_returns_quickly():
+def test_the_probe_a_closed_port_returns_quickly(tmp_path):
     """The two things the wait loop stands on, measured on Windows itself.
 
     The flag has to arrive as the script expects it, WScript.Sleep has to sleep,

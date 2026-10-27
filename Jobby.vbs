@@ -86,12 +86,18 @@ Function Quote(value)
 End Function
 
 ' The one endpoint that needs no token, so it also answers while the dashboard
-' is still starting up.
+' is still starting up. ServerXMLHTTP is the WinHTTP one: it goes straight to
+' the address instead of consulting the browser's proxy settings or hunting for
+' one, which is what can leave a probe to a closed loopback port waiting for a
+' minute - and the wait below is a loop of these. The timeouts hold even that
+' to a second.
 Function ServerIsUp()
   Dim request
   ServerIsUp = False
   On Error Resume Next
-  Set request = CreateObject("MSXML2.XMLHTTP.6.0")
+  Set request = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+  request.setTimeouts 1000, 1000, 1000, 1000
+  request.setProxy 1
   request.Open "GET", url & "/api/health", False
   request.Send
   If Err.Number = 0 Then
@@ -102,18 +108,20 @@ Function ServerIsUp()
 End Function
 
 ' A cold start still has to open the database and (the first time) fetch the
-' LaTeX engine, so give it a wide margin: twenty seconds, the same as the Mac
-' app's wait, and enough on a first run.
+' LaTeX engine, so give it twenty seconds - measured on the clock rather than
+' counted in tries, so a probe that spends its own second failing cannot turn
+' this into minutes.
 Function WaitForServer()
-  Dim attempt
+  Dim started
   WaitForServer = False
-  For attempt = 1 To 80
+  started = Now()
+  Do While DateDiff("s", started, Now()) < 20
     If ServerIsUp() Then
       WaitForServer = True
       Exit Function
     End If
-    WScript.Sleep 250
-  Next
+    WScript.Sleep 200
+  Loop
 End Function
 
 Sub StartServer(python, extraArgs)
