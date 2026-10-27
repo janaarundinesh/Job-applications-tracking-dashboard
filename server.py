@@ -3023,7 +3023,7 @@ def watch_idle(server, idle_seconds, interval=None, clock=time.monotonic, sleep=
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Jobby — your job applications tracking buddy")
+    parser = argparse.ArgumentParser(description="Jobby — Your Job Applications Tracking Buddy")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--db", default=DEFAULT_DB, help="Path to the SQLite database")
@@ -3045,7 +3045,7 @@ def main(argv=None):
     backup_database(args.db)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = "http://%s:%d" % (args.host, args.port)
-    print("Jobby — your job applications tracking buddy")
+    print("Jobby — Your Job Applications Tracking Buddy")
     print("Running at %s" % url)
     print("Database: %s" % os.path.abspath(args.db))
     print("Press Ctrl+C to stop")

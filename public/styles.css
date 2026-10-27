@@ -3059,21 +3059,15 @@ html.is-offline .welcome { display: none; }
 }
 
 .file-guard-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 16px;
-  border-radius: 13px;
-  color: #fff;
-  background: linear-gradient(150deg, #8b9cff, #b06bff 62%, #7ba7ff);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -6px 12px rgba(52, 26, 110, 0.35),
-    0 14px 28px -16px rgba(123, 140, 255, 0.9);
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  /* The app's own mark, at start-screen size: the SVG carries its tile. */
+  filter: drop-shadow(0 14px 24px rgba(76, 92, 220, 0.42));
 }
 
-.file-guard-mark svg { width: 21px; height: 21px; }
+.file-guard-mark img { display: block; width: 100%; height: 100%; }
 
 .file-guard-card h1 { font-size: 20px; letter-spacing: -0.02em; }
 

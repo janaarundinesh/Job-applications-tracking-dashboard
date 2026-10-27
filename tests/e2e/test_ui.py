@@ -475,6 +475,8 @@ def test_offline_start_screen_offers_a_retry(page, context):
     page.wait_for_selector("html.is-offline", state="attached", timeout=10000)
     assert page.locator("#file-guard").is_visible()
     assert page.locator("#file-guard-title").inner_text() == "Start the Jobby server"
+    # The start screen carries the app's own mark, and it actually loads.
+    assert page.evaluate("document.querySelector('#file-guard .file-guard-mark img').naturalWidth") > 0
 
     # "Check again" while the server is still down leaves this screen standing.
     assert page.locator("#file-guard-retry").is_visible()
