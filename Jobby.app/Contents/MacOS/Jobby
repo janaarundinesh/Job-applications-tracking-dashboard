@@ -1,9 +1,10 @@
 #!/bin/sh
-# Jobby — your job applications tracking buddy. The app itself.
+# Jobby — Your Job Applications Tracking Buddy. The app itself.
 #
 # Opening this starts the tracker if it is not already running, waits until it
 # answers, and opens the dashboard. No Terminal window is involved: the server is
-# left running in the background and writes to data/server.log.
+# run by the small helper app in Resources, which keeps it alive after this app
+# has quit, and writes to data/server.log.
 #
 # Keep this bundle in the project folder, or dock an alias to it, so that it can
 # find server.py and your data. "Start Jobby.command" is still there for the
@@ -56,21 +57,23 @@ fi
 
 mkdir -p "$ROOT/data"
 
-# The dashboard's heartbeat is logged here too, so keep the file from growing
-# without end: one rotation when it passes 2 MB.
-if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" | tr -d ' ')" -gt 2097152 ]; then
-  mv -f "$LOG" "$LOG.1"
-fi
-
 # Compile can build a real PDF with Tectonic. It is optional: fetch it once into
 # tools/tectonic, and carry on (in-app preview) if that is not possible.
 "$PYTHON" install_tectonic.py --quiet >>"$LOG" 2>&1
 
-# Start the server without a window. It has to outlive this app, because the
-# dashboard in the browser needs it after the icon is done — so it stops itself
-# instead, once nothing has asked it for anything for two minutes: closing the
-# dashboard is what closes the server.
-nohup "$PYTHON" server.py --port "$PORT" --exit-when-idle 120 </dev/null >>"$LOG" 2>&1 &
+# Start the server through the helper app inside Resources, not as a child of
+# this bundle. macOS tears an app's processes down when the app quits, and this
+# app is finished the moment the dashboard is open — which is what used to leave
+# the page saying "No answer from the server yet" a second later. The helper is
+# its own app, so it outlives this one; it stops the server (and itself) once
+# nothing has asked for anything for two minutes, so closing the dashboard is
+# what closes the server. A nohup or a new session does not help here: the
+# teardown follows the app, not its process group.
+HELPER="$HERE/../Resources/JobbyServer.app"
+if ! open -g "$HELPER"; then
+  alert "The dashboard's server app could not be opened. The bundle looks incomplete — replace Jobby.app with a fresh copy."
+  exit 1
+fi
 
 # Wait for it to answer. A cold start still has to open the database, run the
 # schema and (the first time) fetch the LaTeX engine.

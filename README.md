@@ -8,6 +8,8 @@ No accounts, no build step, no Python dependencies. Python 3.8+ standard library
 
 On macOS, double-click **Jobby.app** in the project folder: it starts the server if it is not already running, waits until it answers and opens the dashboard — no terminal window. The server outlives the icon — the dashboard needs it — and stops itself two minutes after the dashboard stops asking, so closing the window is what closes the server and nothing is left running behind you. It logs to `data/server.log` (rotated to `server.log.1` once it passes 2 MB). That bundle is the one to put in the Dock or Launchpad. Keep it in the project folder, or dock an alias to it, so it can find `server.py`.
 
+The server cannot be a child of `Jobby.app`, because macOS tears an app's processes down when the app quits — and this app is finished the moment the dashboard is open. That used to leave the page saying *No answer from the server yet* a second after it opened. So the bundle carries a small invisible helper, `Jobby.app/Contents/Resources/JobbyServer.app`, which runs the server as its own app. Opening `Jobby.app` with the server already up only opens the dashboard, and the helper exits on its own when the server does.
+
 The launchers are the same thing with a visible console: **Start Jobby.command** on macOS, **Start Jobby.bat** on Windows. Either one starts the server in a terminal window and opens the dashboard — or, if the server is already running, just opens the dashboard. Keep that window open while you work; closing it or pressing `Ctrl+C` stops the server. Use the `.command` when you want to watch the log and stop the server with `Ctrl+C`.
 
 Should the server die while you work, the launcher starts it again in the same window — without opening a second browser tab — and the dashboard reconnects on its own. If it fails three times within seconds of starting (a port already taken, a database it cannot open) the launcher stops trying and says so, instead of spinning forever.
@@ -252,7 +254,7 @@ The **API suite** covers creating and validating jobs, stage changes and their t
 
 The **browser suite** drives Chromium with Playwright: it opens the user picker, adds an application and opens its drawer, walks the Settings menu, saves goals, downloads a real backup zip, checks that a due follow-up produces exactly one notification a day, verifies the dialog focus trap and keyboard sorting, unlocks a PIN-protected profile, previews and downloads that profile's documents, opens a locked profile's resume file and its `\includegraphics` picture, sees a preview that cannot load offer **Try again**, checks that each match number and its drawer chip are coloured by their band, that the tables carry each job's link with any pasted note trimmed off, that a job closed while it opens still closes, that the topbar pill reports the server as active, turns red when a request cannot reach it, keeps **Retry** on hand and goes green again when the server answers — and confirms the app is installable (manifest, registered service worker, cached shell, themed title bar) and that opening it offline shows the start screen, which **Check again** can leave and which steps into the dashboard by itself once the server is back.
 
-A third, small suite drives the launchers with stand-in tools. `Start Jobby.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned; `Jobby.app`'s launch script gets a `curl` that reports the server down and then up, so starting it, waiting for it and opening the dashboard — and leaving a running server alone — are pinned without a real port or browser.
+A third, small suite drives the launchers with stand-in tools. `Start Jobby.command` gets a `python3` that crashes at once, so the restart loop, the single-browser-open rule and the three-strikes give-up are pinned. `Jobby.app`'s launch script gets a `curl` that reports the server down and then up, so opening the helper, waiting for an answer, opening the dashboard — and leaving a running server alone — are pinned without a real port or browser, and the helper's own script is run to check that it finds `server.py` from inside the bundle and starts it with `--exit-when-idle`.
 
 
 ```bash
@@ -282,6 +284,8 @@ If the interpreter it finds has no pytest, the hook says so and lets the commit 
 
 ```
 Jobby.app               macOS app bundle: starts the server if needed, then opens the dashboard
+  Contents/Resources/JobbyServer.app
+                        invisible helper app that runs the server so it outlives Jobby.app
 Start Jobby.command     macOS double-click launcher (same thing, in a terminal window)
 Start Jobby.bat         Windows double-click launcher (same thing)
 server.py        HTTP server, JSON API, validation, SQLite schema, document storage

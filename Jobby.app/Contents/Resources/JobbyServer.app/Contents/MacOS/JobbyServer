@@ -1,0 +1,36 @@
+#!/bin/sh
+# Jobby's server, running as its own (invisible) app.
+#
+# It exists because macOS tears an app's processes down when the app quits:
+# "Jobby.app" opens the dashboard and is finished a moment later, so a server
+# started by it died with it and left the page saying "No answer from the server
+# yet". Here the server is this app's own main process, so nothing takes it down
+# while it runs — and it stops itself, two minutes after the dashboard stops
+# asking, which is what ends this app too.
+
+set -u
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+# MacOS -> Contents -> JobbyServer.app -> Resources -> Jobby.app -> project
+ROOT=$(cd "$HERE/../../../../../.." && pwd)
+PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
+export PATH
+
+PORT=8787
+LOG="$ROOT/data/server.log"
+
+cd "$ROOT" 2>/dev/null || exit 1
+[ -f server.py ] || exit 1
+
+PYTHON=$(command -v python3 2>/dev/null) || exit 1
+
+mkdir -p "$ROOT/data"
+
+# The dashboard's heartbeat is logged here too, so keep the file from growing
+# without end: one rotation when it passes 2 MB.
+if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" | tr -d ' ')" -gt 2097152 ]; then
+  mv -f "$LOG" "$LOG.1"
+fi
+
+# exec: the server replaces this shell, so the app lives exactly as long as it.
+exec "$PYTHON" server.py --port "$PORT" --exit-when-idle 120 </dev/null >>"$LOG" 2>&1
