@@ -49,26 +49,62 @@ is_up() {
   curl -fsS --max-time 2 "$URL/api/health" >/dev/null 2>&1
 }
 
-# Already running? Then opening the app only has to open the dashboard.
-if is_up; then
+mkdir -p "$ROOT/data"
+
+SOURCE="$HERE/../Resources/JobbyWindow.swift"
+WINDOW="$HERE/JobbyWindow"
+
+# The dashboard opens in its own window: a small Swift program built from the
+# file in Resources the first time the app opens, and rebuilt only when that
+# file changes. So there is still no build step to run and nothing to install —
+# and no project file to keep in step.
+build_window() {
+  if [ -x "$WINDOW" ] && [ ! "$SOURCE" -nt "$WINDOW" ]; then
+    return 0
+  fi
+  # Through xcrun, not a bare path to the compiler: xcrun is what points it at
+  # the SDK, and without that it cannot find the standard library.
+  if xcrun --find swiftc >/dev/null 2>&1; then
+    COMPILER="xcrun swiftc"
+  else
+    COMPILER=$(command -v swiftc 2>/dev/null) || return 1
+  fi
+  if ! $COMPILER -O -target "$(uname -m)-apple-macos11.3" -o "$WINDOW.building" "$SOURCE" \
+      -framework Cocoa -framework WebKit >>"$LOG" 2>&1; then
+    rm -f "$WINDOW.building"
+    return 1
+  fi
+  mv -f "$WINDOW.building" "$WINDOW"
+}
+
+# The window, so the dashboard is an app and not a browser tab. If it cannot be
+# built on this machine (no Swift toolchain, or a bundle that cannot be written)
+# a browser tab is still better than nothing — and a failed exec falls through
+# to the browser, so a broken window binary never leaves you with nothing.
+show_dashboard() {
+  if build_window; then
+    exec "$WINDOW" "$URL"
+  fi
   open "$URL"
+}
+
+# Already running? Then opening the app only has to show the dashboard.
+if is_up; then
+  show_dashboard
   exit 0
 fi
-
-mkdir -p "$ROOT/data"
 
 # Compile can build a real PDF with Tectonic. It is optional: fetch it once into
 # tools/tectonic, and carry on (in-app preview) if that is not possible.
 "$PYTHON" install_tectonic.py --quiet >>"$LOG" 2>&1
 
 # Start the server through the helper app inside Resources, not as a child of
-# this bundle. macOS tears an app's processes down when the app quits, and this
-# app is finished the moment the dashboard is open — which is what used to leave
-# the page saying "No answer from the server yet" a second later. The helper is
-# its own app, so it outlives this one; it stops the server (and itself) once
-# nothing has asked for anything for two minutes, so closing the dashboard is
-# what closes the server. A nohup or a new session does not help here: the
-# teardown follows the app, not its process group.
+# this bundle. macOS tears an app's processes down when the app quits, and the
+# dashboard is allowed to outlive this window — Open in Browser, or a page left
+# open while the window is closed. The helper is its own app, so it stops itself
+# (and the server) once nothing has asked for anything for two minutes. A nohup
+# or a new session does not help here: the teardown follows the app, not its
+# process group.
 HELPER="$HERE/../Resources/JobbyServer.app"
 if ! open -g "$HELPER"; then
   alert "The dashboard's server app could not be opened. The bundle looks incomplete — replace Jobby.app with a fresh copy."
@@ -80,7 +116,7 @@ fi
 tries=0
 while [ "$tries" -lt 60 ]; do
   if is_up; then
-    open "$URL"
+    show_dashboard
     exit 0
   fi
   tries=$((tries + 1))

@@ -42,6 +42,37 @@ exit 0
     "sleep": """#!/bin/sh
 exit 0
 """,
+    # The window is compiled from Resources on first use. xcrun reports where
+    # swiftc is, and swiftc writes the stand-in "window" it was asked for, so no
+    # real compiler runs in the test suite.
+    "xcrun": """#!/bin/sh
+if [ "${1:-}" = "--find" ]; then
+  echo "$STUB_DIR/swiftc"
+  exit 0
+fi
+# "xcrun swiftc ..." — hand the rest to the compiler stand-in.
+shift
+exec "$STUB_DIR/swiftc" "$@"
+""",
+    "swiftc": """#!/bin/sh
+if [ "${STUB_COMPILER:-build}" = "fail" ]; then
+  echo "swiftc: simulated failure" >&2
+  exit 1
+fi
+out=""
+previous=""
+for argument in "$@"; do
+  [ "$previous" = "-o" ] && out="$argument"
+  previous="$argument"
+done
+echo "$*" >> "$STUB_DIR/swiftc.log"
+{
+  echo '#!/bin/sh'
+  echo 'echo "$@" >> "$STUB_DIR/window.log"'
+  echo 'exit 0'
+} > "$out"
+chmod +x "$out"
+""",
     # curl answers for /api/health. STUB_CURL says what the server is doing:
     # "up" (running), "down" (never answers) or the default, where the first
     # probe finds nothing and a server started by the app answers after that.
@@ -65,6 +96,10 @@ def project(tmp_path):
     folder = tmp_path / "project"
     folder.mkdir()
     shutil.copytree(APP, folder / APP.name)
+    # As a fresh clone would be: the window is built from its source, not the
+    # copy this machine may already have compiled into the real bundle.
+    for leftover in ("JobbyWindow", "JobbyWindow.building"):
+        (folder / APP.name / "Contents" / "MacOS" / leftover).unlink(missing_ok=True)
     (folder / "server.py").write_text("# stand-in for the real server\n", encoding="utf-8")
     stubs = folder / "stubs"
     stubs.mkdir()
@@ -75,16 +110,17 @@ def project(tmp_path):
     return folder
 
 
-def launcher_env(project, mode="down-then-up"):
+def launcher_env(project, mode="down-then-up", compiler="build"):
     env = dict(os.environ)
     env["PATH"] = str(project / "stubs") + ":/usr/bin:/bin:/usr/sbin:/sbin"
     env["STUB_DIR"] = str(project / "stubs")
     env["STUB_CURL"] = mode
+    env["STUB_COMPILER"] = compiler
     return env
 
 
-def run_app(project, mode="down-then-up"):
-    env = launcher_env(project, mode)
+def run_app(project, mode="down-then-up", compiler="build"):
+    env = launcher_env(project, mode, compiler)
     result = subprocess.run(
         ["/bin/sh", str(project / APP.name / "Contents" / "MacOS" / "Jobby")],
         env=env,
@@ -121,15 +157,28 @@ def test_opening_the_app_starts_the_helper_then_the_dashboard(project):
     # opened — the app itself never turns into the server's parent.
     opened = read(stubs / "open.log")
     assert wait_for(stubs / "open.log", "JobbyServer.app")
-    assert wait_for(stubs / "open.log", "http://127.0.0.1:8787")
-    assert opened.index("JobbyServer.app") < opened.index("http://127.0.0.1:8787")
     # The app itself only installs the optional engine and leaves the server to
     # the helper, which is the one process that has to outlive the bundle.
     installs = read(stubs / "python.log")
     assert "install_tectonic.py" in installs
     assert "server.py" not in installs
+    # The dashboard is shown in its own window, not in a browser tab.
+    assert "JobbyWindow" in read(stubs / "swiftc.log")
+    assert wait_for(stubs / "window.log", "http://127.0.0.1:8787")
+    assert "http://127.0.0.1:8787" not in opened
     # Nothing to report when the start goes to plan.
     assert read(stubs / "alert.log") == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the app bundle is macOS only")
+def test_without_a_swift_compiler_the_dashboard_opens_in_the_browser(project):
+    result, stubs = run_app(project, compiler="fail")
+
+    assert result.returncode == 0, result.stdout
+    # The window could not be built, so a browser tab is the fallback rather than
+    # opening nothing at all.
+    assert wait_for(stubs / "open.log", "http://127.0.0.1:8787")
+    assert read(stubs / "window.log") == ""
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the app bundle is macOS only")
@@ -166,11 +215,12 @@ def test_a_server_that_is_already_running_is_only_opened(project):
     result, stubs = run_app(project, mode="up")
 
     assert result.returncode == 0, result.stdout
-    assert "http://127.0.0.1:8787" in read(stubs / "open.log")
     # A second server would collide on the port, so none is started — not even
     # the helper is asked to open.
     assert read(stubs / "python.log") == ""
     assert "JobbyServer" not in read(stubs / "open.log")
+    # The dashboard still gets its window.
+    assert wait_for(stubs / "window.log", "http://127.0.0.1:8787")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the app bundle is macOS only")
