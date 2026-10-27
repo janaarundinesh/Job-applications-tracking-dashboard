@@ -15,6 +15,7 @@ with server.py, and a script that at least parses (no block left open).
 
 import os
 import re
+import socket
 import subprocess
 from pathlib import Path
 
@@ -29,6 +30,29 @@ SERVER = ROOT / "server.py"
 # opens would never see the server come up.
 PORT = "8787"
 HEALTH = "/api/health"
+
+# What the wait loop in Jobby.vbs stands on, asked of the host directly: the
+# argument as it arrives, WScript.Sleep as it behaves, and how long the probe
+# takes when nothing is listening on the port.
+PROBE = """Option Explicit
+Dim request, started, message
+message = "args=" & WScript.Arguments.Count
+If WScript.Arguments.Count > 0 Then message = message & " first=[" & WScript.Arguments(0) & "]"
+WScript.Echo message
+started = Timer
+WScript.Sleep 250
+WScript.Echo "sleep_ms=" & Round((Timer - started) * 1000)
+On Error Resume Next
+Set request = CreateObject("MSXML2.XMLHTTP.6.0")
+WScript.Echo "create_err=" & Err.Number
+Err.Clear
+started = Timer
+request.Open "GET", "http://127.0.0.1:PORT/api/health", False
+request.Send
+WScript.Echo "send_err=" & Err.Number & " send_ms=" & Round((Timer - started) * 1000)
+On Error GoTo 0
+WScript.Quit 0
+"""
 
 
 def raw(name):
@@ -189,29 +213,83 @@ def test_a_clone_on_any_platform_gets_the_endings_these_files_need():
 
 
 @pytest.mark.skipif(os.name != "nt", reason="cscript is Windows only")
-def test_the_script_runs_where_it_can_be_run(tmp_path):
+def test_a_wait_run_only_waits(tmp_path):
     """On Windows, run the script for real instead of only reading it.
 
-    Nothing is listening on the port, so the path "Start Jobby.bat" asks for -
-    shown the window once a server answers, told which one it is with the word
-    "wait" - waits its twenty seconds out and finishes cleanly. A syntax error, a
-    name used without being declared (Option Explicit), or a flag the script does
-    not recognise all come back as a non-zero exit and a message instead.
+    This is the path "Start Jobby.bat" asks for: the console has already started
+    the server, and the script is there for the window only. Nothing is listening
+    on the port, so it waits its twenty seconds out and finishes cleanly. A
+    syntax error, a name used without being declared (Option Explicit), or a flag
+    the script does not recognise all come back as a non-zero exit and a message.
 
-    Started with the output in a file rather than a pipe: a script that wrongly
-    went on to start the server would leave that child holding the pipe, and the
-    wait would hide the real error behind a timeout.
+    It also has to do *nothing else*: a run that instead started the server would
+    leave a log behind, and one that thought it should do the whole job would
+    download the LaTeX engine too. Both assets are checked, so a wrong branch
+    fails here in under a minute rather than looking like a slow machine.
+
+    The output goes to a file rather than a pipe, so that a server child holding
+    the other end of a pipe cannot turn a real failure into a timeout.
     """
+    log = ROOT / "data" / "server.log"
+    engine = ROOT / "tools" / "tectonic"
+    had_log, had_engine = log.exists(), engine.exists()
+
     said = tmp_path / "cscript.log"
     with open(said, "w", encoding="utf-8", errors="replace") as handle:
-        result = subprocess.run(
-            ["cscript", "//nologo", str(VBS), "wait"],
-            cwd=str(ROOT),
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            timeout=120,
-        )
+        try:
+            result = subprocess.run(
+                ["cscript", "//nologo", str(VBS), "wait"],
+                cwd=str(ROOT),
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                timeout=45,
+            )
+        except subprocess.TimeoutExpired:
+            raise AssertionError(
+                "cscript did not finish in 45s: server.log=%s engine=%s -> %s"
+                % (log.exists(), engine.exists(), said.read_text(encoding="utf-8", errors="replace"))
+            )
+
     assert result.returncode == 0, said.read_text(encoding="utf-8", errors="replace")
+    assert log.exists() == had_log, "a wait run started the server"
+    assert engine.exists() == had_engine, "a wait run installed the engine"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="cscript is Windows only")
+def test_the_probe_a_closed_port_returns_quickly():
+    """The two things the wait loop stands on, measured on Windows itself.
+
+    The flag has to arrive as the script expects it, WScript.Sleep has to sleep,
+    and a health probe against a port nobody is listening on has to come back
+    with an error rather than sitting there: the twenty-second wait is eighty of
+    those probes, so a probe that takes a minute turns it into an hour.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        quiet = probe.getsockname()[1]
+
+    script = tmp_path / "probe.vbs"
+    body = PROBE.replace("PORT", str(quiet))
+    script.write_bytes("\r\n".join(body.splitlines()).encode("ascii") + b"\r\n")
+
+    result = subprocess.run(
+        ["cscript", "//nologo", str(script), "wait"],
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    said = result.stdout + result.stderr
+
+    assert result.returncode == 0, said
+    assert "args=1 first=[wait]" in said, said
+    sleep_ms = int(re.search(r"sleep_ms=(-?\d+)", said).group(1))
+    assert 100 <= sleep_ms <= 2000, said
+    assert "create_err=0" in said, said
+    send_ms = int(re.search(r"send_ms=(-?\d+)", said).group(1))
+    assert send_ms < 5000, said
+    # An error, not a status: nothing is listening on that port.
+    send_err = int(re.search(r"send_err=(-?\d+)", said).group(1))
+    assert send_err != 0, said
 
 
 @pytest.mark.skipif(os.name != "nt", reason="the Windows app is Windows only")
